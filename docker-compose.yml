@@ -6,10 +6,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: hokker
-      POSTGRES_PASSWORD: hokker_local_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hokker_local_password}
       POSTGRES_DB: hokker
-    ports:
-      - "5432:5432"
+    # ВАЖНО: порт наружу НЕ пробрасываем — БД доступна только другим
+    # контейнерам внутри docker-сети, не всему интернету.
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -21,8 +21,7 @@ services:
   redis:
     image: redis:7
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    # Аналогично: без внешнего порта, только для контейнеров внутри сети.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
