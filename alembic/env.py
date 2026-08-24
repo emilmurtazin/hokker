@@ -7,10 +7,7 @@ from app.core.config import settings
 from app.core.database import Base
 
 # Импортируем все модели, чтобы Alembic видел их в Base.metadata
-# (по мере добавления новых моделей на шаге 2 — импортировать их здесь)
-# from app.models.user import User
-# from app.models.coach import Coach
-# ...
+import app.models  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
