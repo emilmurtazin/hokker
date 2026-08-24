@@ -21,5 +21,12 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: str = "local"
 
+    # SMS / OTP
+    SMS_PROVIDER: str = "console"  # "console" для разработки, позже — "smsru" и т.д.
+    OTP_CODE_LENGTH: int = 4
+    OTP_EXPIRE_MINUTES: int = 5
+    OTP_MAX_REQUESTS_PER_WINDOW: int = 3
+    OTP_WINDOW_MINUTES: int = 10
+
 
 settings = Settings()

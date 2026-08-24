@@ -5,6 +5,8 @@ from app.models.coach_player import CoachPlayer
 from app.models.arena import Arena
 from app.models.training_session import TrainingSession
 from app.models.booking import Booking
+from app.models.auth_code import AuthCode
+from app.models.refresh_token import RefreshToken
 
 __all__ = [
     "User",
@@ -14,4 +16,6 @@ __all__ = [
     "Arena",
     "TrainingSession",
     "Booking",
+    "AuthCode",
+    "RefreshToken",
 ]
