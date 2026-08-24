@@ -5,6 +5,10 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router
+from app.api.coaches import router as coaches_router
+from app.api.children import router as children_router
+from app.api.sessions import router as sessions_router
+from app.api.bookings import router as bookings_router
 
 app = FastAPI(
     title="ХОККЕР API",
@@ -14,6 +18,10 @@ app = FastAPI(
 
 app.include_router(auth_router)
 app.include_router(users_router)
+app.include_router(coaches_router)
+app.include_router(children_router)
+app.include_router(sessions_router)
+app.include_router(bookings_router)
 
 
 @app.get("/health")

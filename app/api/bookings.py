@@ -1,0 +1,285 @@
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.api.deps import require_role
+from app.core.database import get_db
+from app.models.booking import Booking
+from app.models.coach_player import CoachPlayer
+from app.models.enums import BookingStatus, CoachPlayerStatus
+from app.models.player import Player
+from app.models.training_session import TrainingSession
+from app.models.user import User
+from app.schemas.booking import BookingIn, BookingOut
+
+router = APIRouter(tags=["bookings"])
+
+WAITLIST_INVITE_TTL_MINUTES = 15
+
+
+def _confirmed_count(db: Session, session_id: int) -> int:
+    return (
+        db.query(func.count(Booking.id))
+        .filter(Booking.session_id == session_id, Booking.status == BookingStatus.confirmed)
+        .scalar()
+    )
+
+
+def _get_owned_child(db: Session, parent: User, child_id: int) -> Player:
+    child = db.get(Player, child_id)
+    if child is None or child.parent_id != parent.id:
+        raise HTTPException(status_code=404, detail="Ребёнок не найден")
+    return child
+
+
+def _promote_next_waiting(db: Session, session_id: int) -> None:
+    """
+    Освободилось место — приглашаем первого из очереди (FIFO по created_at).
+    TODO(шаг «Telegram и уведомления»): здесь же должна ставиться Celery-задача
+    notify(event='waitlist_slot_available', ...) и Celery Beat должен через
+    WAITLIST_INVITE_TTL_MINUTES проверять невостребованные invited -> expired
+    и звать следующего. Пока это делается синхронно при следующем обращении
+    к /bookings/{id}/confirm-invite (см. проверку истечения там) — рабочий,
+    но не полностью автоматический вариант до появления Celery.
+    """
+    next_in_line = (
+        db.query(Booking)
+        .filter(Booking.session_id == session_id, Booking.status == BookingStatus.waiting)
+        .order_by(Booking.created_at.asc())
+        .first()
+    )
+    if next_in_line:
+        next_in_line.status = BookingStatus.invited
+        next_in_line.invited_at = datetime.now(timezone.utc)
+        db.commit()
+        # TODO: notify(parent) через Telegram
+
+
+@router.post("/sessions/{session_id}/bookings", response_model=BookingOut)
+def create_booking(
+    session_id: int,
+    data: BookingIn,
+    user: User = Depends(require_role("parent")),
+    db: Session = Depends(get_db),
+):
+    session = db.get(TrainingSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Тренировка не найдена")
+
+    child = _get_owned_child(db, user, data.child_id)
+
+    # Правило видимости: на closed-тренировку можно записаться только если
+    # ребёнок уже активен в базе тренера.
+    coach_player = (
+        db.query(CoachPlayer)
+        .filter(CoachPlayer.coach_id == session.coach_id, CoachPlayer.player_id == child.id)
+        .first()
+    )
+    is_active_client = coach_player is not None and coach_player.status == CoachPlayerStatus.active
+
+    if session.visibility.value == "closed" and not is_active_client:
+        raise HTTPException(
+            status_code=403, detail="Закрытая тренировка недоступна — ребёнок не в базе тренера"
+        )
+
+    existing = (
+        db.query(Booking)
+        .filter(Booking.session_id == session_id, Booking.player_id == child.id)
+        .first()
+    )
+    if existing is not None and existing.status in (
+        BookingStatus.pending,
+        BookingStatus.confirmed,
+        BookingStatus.waiting,
+        BookingStatus.invited,
+    ):
+        raise HTTPException(status_code=409, detail="Ребёнок уже записан на эту тренировку")
+
+    # Определяем статус новой записи:
+    if not is_active_client:
+        # Новый клиент — нужно подтверждение тренера, вне очереди по местам.
+        new_status = BookingStatus.pending
+    else:
+        confirmed = _confirmed_count(db, session_id)
+        new_status = (
+            BookingStatus.confirmed if confirmed < session.max_players else BookingStatus.waiting
+        )
+
+    if existing is not None:
+        # Переиспользуем строку (unique constraint на session_id+player_id)
+        existing.status = new_status
+        existing.invited_at = None
+        booking = existing
+    else:
+        booking = Booking(session_id=session_id, player_id=child.id, status=new_status)
+        db.add(booking)
+
+    db.commit()
+    db.refresh(booking)
+
+    # TODO(шаг «Telegram и уведомления»):
+    #   new_status == pending -> notify(coach, 'new_booking_request')
+    #   new_status == confirmed -> notify(coach, 'new_booking')
+    return BookingOut.model_validate(booking)
+
+
+@router.post("/bookings/{booking_id}/cancel", response_model=BookingOut)
+def cancel_booking(
+    booking_id: int,
+    user: User = Depends(require_role("parent")),
+    db: Session = Depends(get_db),
+):
+    booking = db.get(Booking, booking_id)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+
+    child = db.get(Player, booking.player_id)
+    if child is None or child.parent_id != user.id:
+        raise HTTPException(status_code=403, detail="Можно отменять только записи своего ребёнка")
+
+    was_confirmed = booking.status == BookingStatus.confirmed
+    booking.status = BookingStatus.cancelled
+    db.commit()
+
+    if was_confirmed:
+        _promote_next_waiting(db, booking.session_id)
+
+    db.refresh(booking)
+    return BookingOut.model_validate(booking)
+
+
+@router.post("/bookings/{booking_id}/confirm-invite", response_model=BookingOut)
+def confirm_invite(
+    booking_id: int,
+    user: User = Depends(require_role("parent")),
+    db: Session = Depends(get_db),
+):
+    """Родитель подтверждает место, освободившееся в листе ожидания."""
+    booking = db.get(Booking, booking_id)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+
+    child = db.get(Player, booking.player_id)
+    if child is None or child.parent_id != user.id:
+        raise HTTPException(status_code=403, detail="Доступно только для своего ребёнка")
+
+    if booking.status != BookingStatus.invited:
+        raise HTTPException(status_code=409, detail="Запись не находится в статусе приглашения")
+
+    deadline = booking.invited_at + timedelta(minutes=WAITLIST_INVITE_TTL_MINUTES)
+    if datetime.now(timezone.utc) > deadline:
+        booking.status = BookingStatus.expired
+        db.commit()
+        _promote_next_waiting(db, booking.session_id)
+        raise HTTPException(status_code=410, detail="Время на подтверждение истекло")
+
+    booking.status = BookingStatus.confirmed
+    db.commit()
+    db.refresh(booking)
+    return BookingOut.model_validate(booking)
+
+
+@router.post("/bookings/{booking_id}/approve", response_model=BookingOut)
+def approve_booking(
+    booking_id: int,
+    user: User = Depends(require_role("coach")),
+    db: Session = Depends(get_db),
+):
+    """Тренер подтверждает заявку от нового клиента (booking.status=pending)."""
+    booking = db.get(Booking, booking_id)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+
+    session = db.get(TrainingSession, booking.session_id)
+    if session.coach_id != user.id:
+        raise HTTPException(status_code=403, detail="Доступно только владельцу тренировки")
+
+    if booking.status != BookingStatus.pending:
+        raise HTTPException(status_code=409, detail="Запись не ожидает подтверждения")
+
+    confirmed = _confirmed_count(db, session.id)
+    booking.status = (
+        BookingStatus.confirmed if confirmed < session.max_players else BookingStatus.waiting
+    )
+
+    coach_player = (
+        db.query(CoachPlayer)
+        .filter(CoachPlayer.coach_id == session.coach_id, CoachPlayer.player_id == booking.player_id)
+        .first()
+    )
+    if coach_player is None:
+        db.add(
+            CoachPlayer(
+                coach_id=session.coach_id,
+                player_id=booking.player_id,
+                status=CoachPlayerStatus.active,
+            )
+        )
+    elif coach_player.status != CoachPlayerStatus.active:
+        coach_player.status = CoachPlayerStatus.active
+
+    db.commit()
+    db.refresh(booking)
+    # TODO(шаг «Telegram и уведомления»): notify(parent, 'booking_approved')
+    return BookingOut.model_validate(booking)
+
+
+@router.post("/bookings/{booking_id}/reject", response_model=BookingOut)
+def reject_booking(
+    booking_id: int,
+    user: User = Depends(require_role("coach")),
+    db: Session = Depends(get_db),
+):
+    booking = db.get(Booking, booking_id)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+
+    session = db.get(TrainingSession, booking.session_id)
+    if session.coach_id != user.id:
+        raise HTTPException(status_code=403, detail="Доступно только владельцу тренировки")
+
+    if booking.status != BookingStatus.pending:
+        raise HTTPException(status_code=409, detail="Запись не ожидает подтверждения")
+
+    booking.status = BookingStatus.rejected
+    db.commit()
+    db.refresh(booking)
+    # TODO(шаг «Telegram и уведомления»): notify(parent, 'booking_rejected')
+    return BookingOut.model_validate(booking)
+
+
+@router.get("/coaches/me/bookings", response_model=list[BookingOut])
+def my_pending_bookings(
+    status_filter: Optional[str] = Query(default="pending", alias="status"),
+    user: User = Depends(require_role("coach")),
+    db: Session = Depends(get_db),
+):
+    query = (
+        db.query(Booking)
+        .join(TrainingSession, TrainingSession.id == Booking.session_id)
+        .filter(TrainingSession.coach_id == user.id)
+    )
+    if status_filter:
+        query = query.filter(Booking.status == BookingStatus(status_filter))
+
+    rows = query.order_by(Booking.created_at.asc()).all()
+    return [BookingOut.model_validate(b) for b in rows]
+
+
+@router.get("/children/{child_id}/bookings", response_model=list[BookingOut])
+def child_bookings(
+    child_id: int,
+    user: User = Depends(require_role("parent")),
+    db: Session = Depends(get_db),
+):
+    _get_owned_child(db, user, child_id)
+    rows = (
+        db.query(Booking)
+        .filter(Booking.player_id == child_id)
+        .order_by(Booking.created_at.desc())
+        .all()
+    )
+    return [BookingOut.model_validate(b) for b in rows]

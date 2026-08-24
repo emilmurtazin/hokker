@@ -41,6 +41,11 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class UserUpdateIn(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    city: Optional[str] = Field(default=None, max_length=255)
+
+
 class TokenPairOut(BaseModel):
     status: Literal["logged_in"] = "logged_in"
     access_token: str
