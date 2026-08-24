@@ -72,6 +72,21 @@ def create_registration_token(phone: str) -> str:
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
+def create_telegram_link_token(user_id: int) -> str:
+    """
+    Токен, зашитый в deep-link на бота (?start=<token>). Живёт недолго —
+    пользователь обычно нажимает «Старт» сразу после генерации ссылки.
+    """
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user_id),
+        "type": "telegram_link",
+        "iat": now,
+        "exp": now + timedelta(minutes=10),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
 def decode_token(token: str) -> dict:
     """Бросает JWTError, если токен невалиден, просрочен или подделан."""
     return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
@@ -83,6 +98,7 @@ __all__ = [
     "create_access_token",
     "create_refresh_token",
     "create_registration_token",
+    "create_telegram_link_token",
     "decode_token",
     "JWTError",
 ]

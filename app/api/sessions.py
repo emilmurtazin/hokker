@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.models.booking import Booking
 from app.models.coach_player import CoachPlayer
 from app.models.enums import BookingStatus, CoachPlayerStatus, SessionType, SessionVisibility
+from app.models.player import Player
 from app.models.training_session import TrainingSession
 from app.models.user import User
 from app.schemas.training_session import (
@@ -17,6 +18,7 @@ from app.schemas.training_session import (
     TrainingSessionOut,
     TrainingSessionListOut,
 )
+from app.services.notifications import notify
 
 router = APIRouter(tags=["sessions"])
 
@@ -28,6 +30,10 @@ def _booked_count(db: Session, session_id: int) -> int:
         .filter(Booking.session_id == session_id, Booking.status == BookingStatus.confirmed)
         .scalar()
     )
+
+
+def _session_title(s: TrainingSession) -> str:
+    return f"{s.type.value} {s.datetime_.strftime('%d.%m в %H:%M')}"
 
 
 def _to_out(db: Session, s: TrainingSession) -> TrainingSessionOut:
@@ -106,8 +112,29 @@ def cancel_session(
     if session.coach_id != user.id:
         raise HTTPException(status_code=403, detail="Можно отменять только свои тренировки")
 
-    # TODO(шаг «Telegram и уведомления»): перед удалением разослать уведомления
-    # всем, у кого booking.status in (confirmed, waiting, invited) по этой тренировке.
+    # Уведомляем всех, у кого была активная запись или бронь листа ожидания —
+    # до удаления, пока ещё видим их bookings.
+    affected = (
+        db.query(Booking)
+        .filter(
+            Booking.session_id == session_id,
+            Booking.status.in_(
+                [
+                    BookingStatus.confirmed,
+                    BookingStatus.waiting,
+                    BookingStatus.invited,
+                    BookingStatus.pending,
+                ]
+            ),
+        )
+        .all()
+    )
+    title = _session_title(session)
+    for b in affected:
+        child = db.get(Player, b.player_id)
+        parent = db.get(User, child.parent_id)
+        notify("session_cancelled", parent, session_title=title)
+
     db.delete(session)  # bookings удалятся каскадно (ondelete=CASCADE)
     db.commit()
     return None

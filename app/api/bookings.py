@@ -14,6 +14,7 @@ from app.models.player import Player
 from app.models.training_session import TrainingSession
 from app.models.user import User
 from app.schemas.booking import BookingIn, BookingOut
+from app.services.notifications import notify
 
 router = APIRouter(tags=["bookings"])
 
@@ -35,15 +36,18 @@ def _get_owned_child(db: Session, parent: User, child_id: int) -> Player:
     return child
 
 
+def _session_title(session: TrainingSession) -> str:
+    return f"{session.type.value} {session.datetime_.strftime('%d.%m в %H:%M')}"
+
+
 def _promote_next_waiting(db: Session, session_id: int) -> None:
     """
     Освободилось место — приглашаем первого из очереди (FIFO по created_at).
-    TODO(шаг «Telegram и уведомления»): здесь же должна ставиться Celery-задача
-    notify(event='waitlist_slot_available', ...) и Celery Beat должен через
-    WAITLIST_INVITE_TTL_MINUTES проверять невостребованные invited -> expired
-    и звать следующего. Пока это делается синхронно при следующем обращении
-    к /bookings/{id}/confirm-invite (см. проверку истечения там) — рабочий,
-    но не полностью автоматический вариант до появления Celery.
+    TODO(Celery): Celery Beat должен через WAITLIST_INVITE_TTL_MINUTES проверять
+    невостребованные invited -> expired и звать следующего. Пока это делается
+    синхронно при следующем обращении к /bookings/{id}/confirm-invite (см.
+    проверку истечения там) — рабочий, но не полностью автоматический вариант
+    до появления Celery.
     """
     next_in_line = (
         db.query(Booking)
@@ -55,7 +59,15 @@ def _promote_next_waiting(db: Session, session_id: int) -> None:
         next_in_line.status = BookingStatus.invited
         next_in_line.invited_at = datetime.now(timezone.utc)
         db.commit()
-        # TODO: notify(parent) через Telegram
+
+        session = db.get(TrainingSession, session_id)
+        child = db.get(Player, next_in_line.player_id)
+        parent = db.get(User, child.parent_id)
+        notify(
+            "waitlist_slot_available",
+            parent,
+            session_title=_session_title(session),
+        )
 
 
 @router.post("/sessions/{session_id}/bookings", response_model=BookingOut)
@@ -120,9 +132,12 @@ def create_booking(
     db.commit()
     db.refresh(booking)
 
-    # TODO(шаг «Telegram и уведомления»):
-    #   new_status == pending -> notify(coach, 'new_booking_request')
-    #   new_status == confirmed -> notify(coach, 'new_booking')
+    coach = db.get(User, session.coach_id)
+    if new_status == BookingStatus.pending:
+        notify("new_booking_request", coach, session_title=_session_title(session))
+    elif new_status == BookingStatus.confirmed:
+        notify("new_booking", coach, session_title=_session_title(session))
+
     return BookingOut.model_validate(booking)
 
 
@@ -143,6 +158,10 @@ def cancel_booking(
     was_confirmed = booking.status == BookingStatus.confirmed
     booking.status = BookingStatus.cancelled
     db.commit()
+
+    session = db.get(TrainingSession, booking.session_id)
+    coach = db.get(User, session.coach_id)
+    notify("booking_cancelled", coach, session_title=_session_title(session))
 
     if was_confirmed:
         _promote_next_waiting(db, booking.session_id)
@@ -223,7 +242,11 @@ def approve_booking(
 
     db.commit()
     db.refresh(booking)
-    # TODO(шаг «Telegram и уведомления»): notify(parent, 'booking_approved')
+
+    child = db.get(Player, booking.player_id)
+    parent = db.get(User, child.parent_id)
+    notify("booking_approved", parent, session_title=_session_title(session))
+
     return BookingOut.model_validate(booking)
 
 
@@ -247,7 +270,11 @@ def reject_booking(
     booking.status = BookingStatus.rejected
     db.commit()
     db.refresh(booking)
-    # TODO(шаг «Telegram и уведомления»): notify(parent, 'booking_rejected')
+
+    child = db.get(Player, booking.player_id)
+    parent = db.get(User, child.parent_id)
+    notify("booking_rejected", parent, session_title=_session_title(session))
+
     return BookingOut.model_validate(booking)
 
 

@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_BOT_USERNAME: str = ""  # без @, например hokker_bot
+    TELEGRAM_WEBHOOK_SECRET: str = ""  # см. app/api/telegram.py
 
     ENVIRONMENT: str = "local"
 
