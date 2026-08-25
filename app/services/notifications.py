@@ -25,6 +25,7 @@ _TEMPLATES = {
     "waitlist_expired": "⌛ Время на подтверждение места на «{session_title}» истекло.",
     "session_cancelled": "🚫 Тренировка «{session_title}» отменена тренером.",
     "coach_invite": "🤝 Тренер {coach_name} добавил вас в базу учеников. Подтвердите в приложении.",
+    "rating_added": "⭐ Тренер выставил новые оценки за «{session_title}». Посмотрите прогресс в приложении.",
 }
 
 

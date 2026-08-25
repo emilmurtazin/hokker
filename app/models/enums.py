@@ -40,6 +40,14 @@ class SessionVisibility(str, enum.Enum):
     closed = "closed"
 
 
+class SkillCategory(str, enum.Enum):
+    skating = "skating"                # катание
+    stickhandling = "stickhandling"    # владение клюшкой
+    shooting = "shooting"              # бросок
+    tactics = "tactics"                # тактика
+    discipline = "discipline"          # дисциплина
+
+
 class AttendanceStatus(str, enum.Enum):
     present = "present"       # присутствовал
     absent = "absent"         # отсутствовал
