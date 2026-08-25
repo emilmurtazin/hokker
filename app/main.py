@@ -12,6 +12,7 @@ from app.api.sessions import router as sessions_router
 from app.api.bookings import router as bookings_router
 from app.api.attendance import router as attendance_router
 from app.api.ratings import router as ratings_router
+from app.api.arenas import router as arenas_router
 from app.api.telegram import router as telegram_router
 
 app = FastAPI(
@@ -33,6 +34,7 @@ app.include_router(sessions_router)
 app.include_router(bookings_router)
 app.include_router(attendance_router)
 app.include_router(ratings_router)
+app.include_router(arenas_router)
 app.include_router(telegram_router)
 
 

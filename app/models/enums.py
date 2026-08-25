@@ -40,6 +40,26 @@ class SessionVisibility(str, enum.Enum):
     closed = "closed"
 
 
+class IceType(str, enum.Enum):
+    full = "full"     # полный лёд
+    half = "half"     # половина
+    third = "third"   # треть
+
+
+class SlotStatus(str, enum.Enum):
+    available = "available"
+    pending = "pending"
+    booked = "booked"
+    cancelled = "cancelled"
+
+
+class SlotRequestStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+    cancelled_by_coach = "cancelled_by_coach"
+
+
 class SkillCategory(str, enum.Enum):
     skating = "skating"                # катание
     stickhandling = "stickhandling"    # владение клюшкой

@@ -60,7 +60,7 @@ class RegistrationRequiredOut(BaseModel):
 
 class RegisterIn(BaseModel):
     registration_token: str
-    role: Literal["coach", "parent"]
+    role: Literal["coach", "parent", "arena_admin"]
     name: str = Field(..., min_length=1, max_length=255)
     city: Optional[str] = None
 

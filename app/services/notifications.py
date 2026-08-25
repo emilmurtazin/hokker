@@ -26,6 +26,10 @@ _TEMPLATES = {
     "session_cancelled": "🚫 Тренировка «{session_title}» отменена тренером.",
     "coach_invite": "🤝 Тренер {coach_name} добавил вас в базу учеников. Подтвердите в приложении.",
     "rating_added": "⭐ Тренер выставил новые оценки за «{session_title}». Посмотрите прогресс в приложении.",
+    "ice_request_new": "🧊 Новая заявка от тренера {coach_name} на слот: {slot_info}.",
+    "ice_request_approved": "✅ Ваша заявка на лёд подтверждена: {slot_info}.",
+    "ice_request_rejected": "❌ Ваша заявка на лёд отклонена: {slot_info}.",
+    "ice_request_cancelled": "🚫 Тренер {coach_name} отменил заявку на слот: {slot_info}.",
 }
 
 
