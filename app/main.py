@@ -5,10 +5,12 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router
+from app.api.coach_players import router as coach_players_router
 from app.api.coaches import router as coaches_router
 from app.api.children import router as children_router
 from app.api.sessions import router as sessions_router
 from app.api.bookings import router as bookings_router
+from app.api.attendance import router as attendance_router
 from app.api.telegram import router as telegram_router
 
 app = FastAPI(
@@ -19,10 +21,16 @@ app = FastAPI(
 
 app.include_router(auth_router)
 app.include_router(users_router)
+# ВАЖНО: coach_players_router регистрируется РАНЬШЕ coaches_router — у него
+# литеральные пути /coaches/lookup-parent и /coaches/me/players, а в
+# coaches_router есть параметризованный /coaches/{coach_id}, который иначе
+# перехватил бы эти запросы первым (см. аналогичный фикс в sessions.py).
+app.include_router(coach_players_router)
 app.include_router(coaches_router)
 app.include_router(children_router)
 app.include_router(sessions_router)
 app.include_router(bookings_router)
+app.include_router(attendance_router)
 app.include_router(telegram_router)
 
 

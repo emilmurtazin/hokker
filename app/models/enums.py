@@ -40,6 +40,13 @@ class SessionVisibility(str, enum.Enum):
     closed = "closed"
 
 
+class AttendanceStatus(str, enum.Enum):
+    present = "present"       # присутствовал
+    absent = "absent"         # отсутствовал
+    sick = "sick"              # болел
+    no_reason = "no_reason"    # без причины
+
+
 class BookingStatus(str, enum.Enum):
     pending = "pending"        # ждёт подтверждения тренера (новый клиент)
     confirmed = "confirmed"    # подтверждено, место занято
