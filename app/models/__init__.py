@@ -9,6 +9,7 @@ from app.models.training_session import TrainingSession
 from app.models.booking import Booking
 from app.models.attendance import Attendance
 from app.models.rating import Rating
+from app.models.exercise import Exercise
 from app.models.auth_code import AuthCode
 from app.models.refresh_token import RefreshToken
 
@@ -24,6 +25,7 @@ __all__ = [
     "Booking",
     "Attendance",
     "Rating",
+    "Exercise",
     "AuthCode",
     "RefreshToken",
 ]

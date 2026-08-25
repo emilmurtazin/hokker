@@ -5,6 +5,28 @@ class UserRole(str, enum.Enum):
     coach = "coach"
     parent = "parent"
     arena_admin = "arena_admin"
+    admin = "admin"  # платформенный администратор — управляет библиотекой видеоупражнений
+
+
+class ExerciseCategory(str, enum.Enum):
+    skating = "skating"                # техника катания
+    stickhandling = "stickhandling"    # техника ведения шайбы
+    shooting = "shooting"              # техника броска
+    strength = "strength"              # силовые тренировки (ОФП)
+    goalie = "goalie"                  # вратарская техника
+    game = "game"                      # игровые упражнения
+
+
+class ExerciseAgeGroup(str, enum.Enum):
+    age_6_9 = "6-9"
+    age_10_12 = "10-12"
+    age_13_plus = "13+"
+
+
+class ExerciseLevel(str, enum.Enum):
+    beginner = "beginner"          # новичок
+    intermediate = "intermediate"  # средний
+    advanced = "advanced"          # продвинутый
 
 
 class Specialization(str, enum.Enum):
