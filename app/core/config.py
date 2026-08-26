@@ -21,6 +21,14 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_USERNAME: str = ""  # без @, например hokker_bot
     TELEGRAM_WEBHOOK_SECRET: str = ""  # см. app/api/telegram.py
 
+    # Список разрешённых доменов фронтенда через запятую, например:
+    # "https://hokker-frontend.twc1.net,http://localhost:5173"
+    CORS_ORIGINS: str = "http://localhost:5173"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
     ENVIRONMENT: str = "local"
 
     # SMS / OTP
