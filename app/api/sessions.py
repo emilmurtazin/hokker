@@ -205,12 +205,12 @@ def coach_sessions_for_parent(
     """
     has_active_child = (
         db.query(CoachPlayer)
-        .join_from(CoachPlayer, CoachPlayer.player)
+        .join(Player, Player.id == CoachPlayer.player_id)
         .filter(
             CoachPlayer.coach_id == coach_id,
             CoachPlayer.status == CoachPlayerStatus.active,
+            Player.parent_id == user.id,
         )
-        .filter(CoachPlayer.player.has(parent_id=user.id))
         .first()
         is not None
     )
