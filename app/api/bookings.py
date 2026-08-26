@@ -40,6 +40,19 @@ def _session_title(session: TrainingSession) -> str:
     return f"{session.type.value} {session.datetime_.strftime('%d.%m в %H:%M')}"
 
 
+def _to_booking_out(db: Session, booking: Booking) -> BookingOut:
+    player = db.get(Player, booking.player_id)
+    return BookingOut(
+        id=booking.id,
+        session_id=booking.session_id,
+        player_id=booking.player_id,
+        player_name=player.name if player else None,
+        status=booking.status.value,
+        invited_at=booking.invited_at,
+        created_at=booking.created_at,
+    )
+
+
 def _promote_next_waiting(db: Session, session_id: int) -> None:
     """
     Освободилось место — приглашаем первого из очереди (FIFO по created_at).
@@ -68,6 +81,28 @@ def _promote_next_waiting(db: Session, session_id: int) -> None:
             parent,
             session_title=_session_title(session),
         )
+
+
+@router.get("/sessions/{session_id}/bookings", response_model=list[BookingOut])
+def session_bookings(
+    session_id: int,
+    user: User = Depends(require_role("coach")),
+    db: Session = Depends(get_db),
+):
+    """Все записи на конкретную тренировку — тренеру для управления заявками."""
+    session = db.get(TrainingSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Тренировка не найдена")
+    if session.coach_id != user.id:
+        raise HTTPException(status_code=403, detail="Доступно только владельцу тренировки")
+
+    rows = (
+        db.query(Booking)
+        .filter(Booking.session_id == session_id)
+        .order_by(Booking.created_at.asc())
+        .all()
+    )
+    return [_to_booking_out(db, b) for b in rows]
 
 
 @router.post("/sessions/{session_id}/bookings", response_model=BookingOut)
@@ -138,7 +173,7 @@ def create_booking(
     elif new_status == BookingStatus.confirmed:
         notify("new_booking", coach, session_title=_session_title(session))
 
-    return BookingOut.model_validate(booking)
+    return _to_booking_out(db, booking)
 
 
 @router.post("/bookings/{booking_id}/cancel", response_model=BookingOut)
@@ -167,7 +202,7 @@ def cancel_booking(
         _promote_next_waiting(db, booking.session_id)
 
     db.refresh(booking)
-    return BookingOut.model_validate(booking)
+    return _to_booking_out(db, booking)
 
 
 @router.post("/bookings/{booking_id}/confirm-invite", response_model=BookingOut)
@@ -198,7 +233,7 @@ def confirm_invite(
     booking.status = BookingStatus.confirmed
     db.commit()
     db.refresh(booking)
-    return BookingOut.model_validate(booking)
+    return _to_booking_out(db, booking)
 
 
 @router.post("/bookings/{booking_id}/approve", response_model=BookingOut)
@@ -247,7 +282,7 @@ def approve_booking(
     parent = db.get(User, child.parent_id)
     notify("booking_approved", parent, session_title=_session_title(session))
 
-    return BookingOut.model_validate(booking)
+    return _to_booking_out(db, booking)
 
 
 @router.post("/bookings/{booking_id}/reject", response_model=BookingOut)
@@ -275,7 +310,7 @@ def reject_booking(
     parent = db.get(User, child.parent_id)
     notify("booking_rejected", parent, session_title=_session_title(session))
 
-    return BookingOut.model_validate(booking)
+    return _to_booking_out(db, booking)
 
 
 @router.get("/coaches/me/bookings", response_model=list[BookingOut])
@@ -293,7 +328,7 @@ def my_pending_bookings(
         query = query.filter(Booking.status == BookingStatus(status_filter))
 
     rows = query.order_by(Booking.created_at.asc()).all()
-    return [BookingOut.model_validate(b) for b in rows]
+    return [_to_booking_out(db, b) for b in rows]
 
 
 @router.get("/children/{child_id}/bookings", response_model=list[BookingOut])
@@ -309,4 +344,4 @@ def child_bookings(
         .order_by(Booking.created_at.desc())
         .all()
     )
-    return [BookingOut.model_validate(b) for b in rows]
+    return [_to_booking_out(db, b) for b in rows]
