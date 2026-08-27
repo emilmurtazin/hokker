@@ -31,6 +31,8 @@ class AttendanceSummary(BaseModel):
 
 class CoachPlayerOut(BaseModel):
     id: int  # id связи coach_players
+    coach_id: int
+    coach_name: str
     player_id: int
     player_name: str
     birth_date: date

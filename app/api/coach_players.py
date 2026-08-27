@@ -35,6 +35,7 @@ def _age(birth_date: date) -> int:
 def _build_out(db: Session, cp: CoachPlayer) -> CoachPlayerOut:
     player = db.get(Player, cp.player_id)
     parent = db.get(User, player.parent_id)
+    coach = db.get(User, cp.coach_id)
 
     attendance_rows = (
         db.query(Attendance.status, func.count(Attendance.id))
@@ -60,6 +61,8 @@ def _build_out(db: Session, cp: CoachPlayer) -> CoachPlayerOut:
 
     return CoachPlayerOut(
         id=cp.id,
+        coach_id=cp.coach_id,
+        coach_name=coach.name,
         player_id=player.id,
         player_name=player.name,
         birth_date=player.birth_date,
