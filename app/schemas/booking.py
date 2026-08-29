@@ -13,6 +13,10 @@ class BookingOut(BaseModel):
     session_id: int
     player_id: int
     player_name: Optional[str] = None
+    player_age: Optional[int] = None
+    player_position: Optional[str] = None
+    parent_name: Optional[str] = None
+    parent_phone: Optional[str] = None
     status: str
     invited_at: Optional[datetime] = None
     created_at: datetime

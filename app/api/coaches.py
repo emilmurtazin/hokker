@@ -32,6 +32,7 @@ def _build_profile_out(coach: Coach, user: User) -> CoachProfileOut:
         experience_years=coach.experience_years,
         about=coach.about,
         age_groups=coach.age_groups,
+        visible_in_search=coach.visible_in_search,
     )
 
 
@@ -50,6 +51,7 @@ def upsert_my_profile(
     coach.experience_years = data.experience_years
     coach.about = data.about
     coach.age_groups = data.age_groups
+    coach.visible_in_search = data.visible_in_search
     db.commit()
     db.refresh(coach)
 
@@ -91,7 +93,7 @@ def catalog(
     query = (
         db.query(Coach, User)
         .join(User, User.id == Coach.id)
-        .filter(User.role == UserRole.coach, User.city == city)
+        .filter(User.role == UserRole.coach, User.city == city, Coach.visible_in_search.is_(True))
     )
 
     if specialization:
@@ -127,7 +129,11 @@ def catalog(
                 experience_years=coach.experience_years,
                 next_open_sessions=[
                     TrainingSessionShortOut(
-                        id=s.id, type=s.type.value, datetime=s.datetime_, max_players=s.max_players
+                        id=s.id,
+                        type=s.type.value,
+                        datetime=s.datetime_,
+                        max_players=s.max_players,
+                        price=float(s.price) if s.price is not None else None,
                     )
                     for s in upcoming
                 ],

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, String, Integer, DateTime, Enum, ForeignKey, func
+from sqlalchemy import BigInteger, String, Integer, DateTime, Enum, ForeignKey, Numeric, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -33,6 +33,7 @@ class TrainingSession(Base):
     arena_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     max_players: Mapped[int] = mapped_column(Integer, nullable=False)
+    price: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)  # с человека, справочно
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     coach: Mapped["User"] = relationship()

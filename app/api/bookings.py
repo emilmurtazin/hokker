@@ -40,13 +40,23 @@ def _session_title(session: TrainingSession) -> str:
     return f"{session.type.value} {session.datetime_.strftime('%d.%m в %H:%M')}"
 
 
+def _age(birth_date) -> int:
+    today = datetime.now(timezone.utc).date()
+    return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+
+
 def _to_booking_out(db: Session, booking: Booking) -> BookingOut:
     player = db.get(Player, booking.player_id)
+    parent = db.get(User, player.parent_id) if player else None
     return BookingOut(
         id=booking.id,
         session_id=booking.session_id,
         player_id=booking.player_id,
         player_name=player.name if player else None,
+        player_age=_age(player.birth_date) if player else None,
+        player_position=player.position.value if player else None,
+        parent_name=parent.name if parent else None,
+        parent_phone=parent.phone if parent else None,
         status=booking.status.value,
         invited_at=booking.invited_at,
         created_at=booking.created_at,
@@ -115,6 +125,8 @@ def create_booking(
     session = db.get(TrainingSession, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Тренировка не найдена")
+    if session.datetime_ < datetime.now(timezone.utc):
+        raise HTTPException(status_code=409, detail="Тренировка уже прошла — запись недоступна")
 
     child = _get_owned_child(db, user, data.child_id)
 

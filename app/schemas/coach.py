@@ -12,6 +12,7 @@ class CoachProfileIn(BaseModel):
     about: Optional[str] = Field(default=None, max_length=2000)
     # через запятую, например "6-9,10-12,13+"
     age_groups: Optional[str] = Field(default=None, max_length=255)
+    visible_in_search: bool = True
 
 
 class CoachProfileOut(BaseModel):
@@ -22,6 +23,7 @@ class CoachProfileOut(BaseModel):
     experience_years: Optional[int] = None
     about: Optional[str] = None
     age_groups: Optional[str] = None
+    visible_in_search: bool = True
 
 
 class TrainingSessionShortOut(BaseModel):
@@ -29,6 +31,7 @@ class TrainingSessionShortOut(BaseModel):
     type: str
     datetime: datetime
     max_players: int
+    price: Optional[float] = None
 
 
 class CoachCardOut(BaseModel):

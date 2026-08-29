@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_role
 from app.core.database import get_db
 from app.models.booking import Booking
+from app.models.coach import Coach
 from app.models.coach_player import CoachPlayer
 from app.models.enums import BookingStatus, CoachPlayerStatus, SessionType, SessionVisibility
 from app.models.player import Player
@@ -17,6 +18,8 @@ from app.schemas.training_session import (
     TrainingSessionIn,
     TrainingSessionOut,
     TrainingSessionListOut,
+    TrainingSessionFeedOut,
+    TrainingSessionFeedListOut,
 )
 from app.services.notifications import notify
 
@@ -45,8 +48,51 @@ def _to_out(db: Session, s: TrainingSession) -> TrainingSessionOut:
         datetime=s.datetime_,
         arena_name=s.arena_name,
         max_players=s.max_players,
+        price=float(s.price) if s.price is not None else None,
         booked_count=_booked_count(db, s.id),
     )
+
+
+@router.get("/sessions", response_model=TrainingSessionFeedListOut)
+def sessions_feed(
+    city: str = Query(..., description="Город — обязательный фильтр"),
+    type: Optional[str] = Query(default=None, alias="type"),
+    date_from: Optional[str] = Query(default=None),
+    date_to: Optional[str] = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """
+    Общая лента открытых будущих тренировок по всем тренерам города —
+    альтернатива поиску через конкретный профиль тренера.
+    """
+    query = (
+        db.query(TrainingSession, User.name)
+        .join(User, User.id == TrainingSession.coach_id)
+        .join(Coach, Coach.id == TrainingSession.coach_id)
+        .filter(
+            User.city == city,
+            Coach.visible_in_search.is_(True),
+            TrainingSession.visibility == SessionVisibility.open,
+            TrainingSession.datetime_ >= datetime.now(timezone.utc),
+        )
+    )
+    if type:
+        query = query.filter(TrainingSession.type == SessionType(type))
+    if date_from:
+        query = query.filter(TrainingSession.datetime_ >= date_from)
+    if date_to:
+        query = query.filter(TrainingSession.datetime_ <= date_to)
+
+    total = query.count()
+    rows = query.order_by(TrainingSession.datetime_.asc()).offset(offset).limit(limit).all()
+
+    items = [
+        TrainingSessionFeedOut(**_to_out(db, s).model_dump(), coach_name=coach_name)
+        for s, coach_name in rows
+    ]
+    return TrainingSessionFeedListOut(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.post("/sessions", response_model=TrainingSessionOut)
@@ -62,6 +108,7 @@ def create_session(
         datetime_=data.datetime,
         arena_name=data.arena_name,
         max_players=data.max_players,
+        price=data.price,
     )
     db.add(session)
     db.commit()
@@ -95,6 +142,7 @@ def update_session(
     session.datetime_ = data.datetime
     session.arena_name = data.arena_name
     session.max_players = data.max_players
+    session.price = data.price
     db.commit()
     db.refresh(session)
     return _to_out(db, session)
@@ -180,6 +228,7 @@ def coach_sessions_public(
     query = db.query(TrainingSession).filter(
         TrainingSession.coach_id == coach_id,
         TrainingSession.visibility == SessionVisibility.open,
+        TrainingSession.datetime_ >= datetime.now(timezone.utc),
     )
 
     total = query.count()
@@ -215,7 +264,10 @@ def coach_sessions_for_parent(
         is not None
     )
 
-    query = db.query(TrainingSession).filter(TrainingSession.coach_id == coach_id)
+    query = db.query(TrainingSession).filter(
+        TrainingSession.coach_id == coach_id,
+        TrainingSession.datetime_ >= datetime.now(timezone.utc),
+    )
     if not has_active_child:
         query = query.filter(TrainingSession.visibility == SessionVisibility.open)
 

@@ -27,6 +27,9 @@ class Coach(Base):
     # например "6-9,10-12,13+" — для Этапа 1 этого достаточно,
     # при необходимости позже можно вынести в отдельную таблицу.
     age_groups: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    visible_in_search: Mapped[bool] = mapped_column(
+        default=True, server_default="true", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="coach_profile")

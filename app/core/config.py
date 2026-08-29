@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_BOT_USERNAME: str = ""  # без @, например hokker_bot
     TELEGRAM_WEBHOOK_SECRET: str = ""  # см. app/api/telegram.py
+    TELEGRAM_PROXY_URL: str = ""  # см. app/services/telegram.py — обход блокировки РКН
 
     # Список разрешённых доменов фронтенда через запятую, например:
     # "https://hokker-frontend.twc1.net,http://localhost:5173"
@@ -32,7 +33,8 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "local"
 
     # SMS / OTP
-    SMS_PROVIDER: str = "console"  # "console" для разработки, позже — "smsru" и т.д.
+    SMS_PROVIDER: str = "console"  # "console" для разработки, "smsru" для продакшена
+    SMSRU_API_ID: str = ""
     OTP_CODE_LENGTH: int = 4
     OTP_EXPIRE_MINUTES: int = 5
     OTP_MAX_REQUESTS_PER_WINDOW: int = 3
