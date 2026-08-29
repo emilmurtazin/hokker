@@ -80,7 +80,8 @@ class SMSCProvider(SMSProvider):
     def send(self, phone: str, code: str) -> None:
         params = {
             "phones": phone,
-            "mes": f"Код подтверждения ХОККЕР: {code}",
+            "mes": f"Код подтверждения {code}",
+            "sender": "+79872311693",
             "fmt": 3,  # JSON-ответ
             "charset": "utf-8",
         }
