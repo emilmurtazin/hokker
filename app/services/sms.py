@@ -66,11 +66,56 @@ class SMSRuProvider(SMSProvider):
             raise SMSRuError(f"sms.ru не смог отправить на {phone}: {sms_status}")
 
 
+class SMSCError(Exception):
+    pass
+
+
+class SMSCProvider(SMSProvider):
+    """
+    Реальная отправка через https://smsc.ru — GET-based API.
+    Авторизация: либо apikey (проще, один параметр), либо пара login+psw.
+    Ключи и пароли: https://smsc.ru/passwords/
+    """
+
+    def send(self, phone: str, code: str) -> None:
+        params = {
+            "phones": phone,
+            "mes": f"Код подтверждения ХОККЕР: {code}",
+            "fmt": 3,  # JSON-ответ
+            "charset": "utf-8",
+        }
+
+        if settings.SMSC_API_KEY:
+            params["apikey"] = settings.SMSC_API_KEY
+        elif settings.SMSC_LOGIN and settings.SMSC_PASSWORD:
+            params["login"] = settings.SMSC_LOGIN
+            params["psw"] = settings.SMSC_PASSWORD
+        else:
+            raise SMSCError(
+                "Не заданы учётные данные smsc.ru — нужен либо SMSC_API_KEY, "
+                "либо пара SMSC_LOGIN + SMSC_PASSWORD"
+            )
+
+        response = httpx.get("https://smsc.ru/sys/send.php", params=params, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+
+        # При успехе smsc.ru возвращает {"id": ..., "cnt": ...} (fmt=3),
+        # при ошибке — {"error": "текст", "error_code": N}.
+        if "error" in data:
+            raise SMSCError(
+                f"smsc.ru не смог отправить SMS на {phone}: "
+                f"[{data.get('error_code')}] {data.get('error')}"
+            )
+
+
 def get_sms_provider() -> SMSProvider:
     if settings.SMS_PROVIDER == "console":
         return ConsoleSMSProvider()
     if settings.SMS_PROVIDER == "smsru":
         return SMSRuProvider()
+    if settings.SMS_PROVIDER == "smsc":
+        return SMSCProvider()
     raise NotImplementedError(
         f"SMS-провайдер '{settings.SMS_PROVIDER}' ещё не реализован. "
         "Добавьте класс в app/services/sms.py и подключите здесь."

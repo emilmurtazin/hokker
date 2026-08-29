@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     # SMS / OTP
     SMS_PROVIDER: str = "console"  # "console" для разработки, "smsru" для продакшена
     SMSRU_API_ID: str = ""
+    # smsc.ru — либо apikey, либо пара login+password (см. https://smsc.ru/passwords/)
+    SMSC_API_KEY: str = ""
+    SMSC_LOGIN: str = ""
+    SMSC_PASSWORD: str = ""
     OTP_CODE_LENGTH: int = 4
     OTP_EXPIRE_MINUTES: int = 5
     OTP_MAX_REQUESTS_PER_WINDOW: int = 3
