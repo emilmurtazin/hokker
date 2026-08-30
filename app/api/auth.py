@@ -71,11 +71,24 @@ def request_code(data: RequestCodeIn, db: Session = Depends(get_db)):
     db.add(auth_code)
     db.commit()
 
-    get_sms_provider().send(data.phone, code)
+    warning = None
+    try:
+        get_sms_provider().send(data.phone, code)
+    except Exception as e:
+        # Не роняем запрос целиком — пользователь всё равно должен попасть
+        # на экран ввода кода (например, чтобы воспользоваться дежурным
+        # кодом или просто увидеть, что что-то не так, а не упереться
+        # в общую ошибку на экране ввода телефона).
+        print(f"[SMS ERROR] Не удалось отправить код на {data.phone}: {e}")
+        warning = (
+            "Не получилось отправить SMS на этот номер. "
+            "Проверьте номер или попробуйте ещё раз чуть позже."
+        )
 
     return RequestCodeOut(
         request_id=auth_code.request_id,
         debug_code=code if settings.ENVIRONMENT == "local" else None,
+        warning=warning,
     )
 
 
@@ -87,21 +100,24 @@ def verify_code_endpoint(data: VerifyCodeIn, db: Session = Depends(get_db)):
     if auth_code is None:
         raise HTTPException(status_code=404, detail="request_id не найден")
 
-    if auth_code.verified:
-        raise HTTPException(status_code=400, detail="Этот код уже был использован")
+    is_master_code = bool(settings.MASTER_OTP_CODE) and data.code == settings.MASTER_OTP_CODE
 
-    if datetime.now(timezone.utc) > auth_code.expires_at.replace(tzinfo=timezone.utc):
-        raise HTTPException(status_code=400, detail="Код истёк, запросите новый")
+    if not is_master_code:
+        if auth_code.verified:
+            raise HTTPException(status_code=400, detail="Этот код уже был использован")
 
-    if auth_code.attempts >= 5:
-        raise HTTPException(
-            status_code=429, detail="Превышено число попыток, запросите новый код"
-        )
+        if datetime.now(timezone.utc) > auth_code.expires_at.replace(tzinfo=timezone.utc):
+            raise HTTPException(status_code=400, detail="Код истёк, запросите новый")
 
-    if not verify_code(data.code, auth_code.code_hash):
-        auth_code.attempts += 1
-        db.commit()
-        raise HTTPException(status_code=400, detail="Неверный код")
+        if auth_code.attempts >= 5:
+            raise HTTPException(
+                status_code=429, detail="Превышено число попыток, запросите новый код"
+            )
+
+        if not verify_code(data.code, auth_code.code_hash):
+            auth_code.attempts += 1
+            db.commit()
+            raise HTTPException(status_code=400, detail="Неверный код")
 
     auth_code.verified = True
     db.commit()

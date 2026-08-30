@@ -24,6 +24,10 @@ class RequestCodeOut(BaseModel):
     # Присутствует ТОЛЬКО в ENVIRONMENT=local — чтобы можно было
     # тестировать без реального SMS-провайдера. На проде это поле = None.
     debug_code: Optional[str] = None
+    # Заполняется, если SMS-провайдер не смог отправить код (например,
+    # некорректный номер) — фронтенд всё равно переходит к экрану ввода
+    # кода, но должен показать это предупреждение пользователю.
+    warning: Optional[str] = None
 
 
 class VerifyCodeIn(BaseModel):

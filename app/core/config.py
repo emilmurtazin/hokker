@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     OTP_EXPIRE_MINUTES: int = 5
     OTP_MAX_REQUESTS_PER_WINDOW: int = 3
     OTP_WINDOW_MINUTES: int = 10
+    # Дежурный код, подходящий для входа на ЛЮБОЙ номер телефона — нужен для
+    # прохождения проверки в App Store/Google Play и для тестирования.
+    # ВАЖНО: пока это значение не пустое, кто угодно, зная номер телефона
+    # пользователя, может войти в его аккаунт этим кодом. Выключить — оставить
+    # пустую строку.
+    MASTER_OTP_CODE: str = "2808"
 
 
 settings = Settings()
