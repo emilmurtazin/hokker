@@ -23,6 +23,7 @@ class TrainingSession(Base):
     datetime_: Mapped[datetime] = mapped_column(
         "datetime", DateTime(timezone=True), nullable=False, index=True
     )
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="60")
 
     # Задел под Этап 4 (аренда льда) — согласовано заранее, чтобы не мигрировать
     # данные позже. На Этапе 1 тренер вводит arena_name текстом,

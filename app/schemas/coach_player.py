@@ -49,3 +49,10 @@ class CoachPlayerOut(BaseModel):
 
 class MessageIn(BaseModel):
     text: str
+
+
+class AttendanceHistoryEntryOut(BaseModel):
+    session_id: int
+    session_type: str
+    session_datetime: datetime
+    status: Optional[str] = None  # None — тренировка была, но отметка не ставилась

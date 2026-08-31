@@ -11,6 +11,7 @@ class TrainingSessionIn(BaseModel):
     type: SESSION_TYPES
     visibility: SESSION_VISIBILITY
     datetime: datetime
+    duration_minutes: int = Field(default=60, ge=15, le=480)
     arena_name: Optional[str] = Field(default=None, max_length=255)
     max_players: int = Field(..., ge=1, le=100)
     price: Optional[float] = Field(default=None, ge=0)
@@ -31,6 +32,7 @@ class TrainingSessionOut(BaseModel):
     type: str
     visibility: str
     datetime: datetime
+    duration_minutes: int
     arena_name: Optional[str] = None
     max_players: int
     price: Optional[float] = None

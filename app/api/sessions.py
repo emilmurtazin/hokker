@@ -46,6 +46,7 @@ def _to_out(db: Session, s: TrainingSession) -> TrainingSessionOut:
         type=s.type.value,
         visibility=s.visibility.value,
         datetime=s.datetime_,
+        duration_minutes=s.duration_minutes,
         arena_name=s.arena_name,
         max_players=s.max_players,
         price=float(s.price) if s.price is not None else None,
@@ -106,6 +107,7 @@ def create_session(
         type=SessionType(data.type),
         visibility=SessionVisibility(data.visibility),
         datetime_=data.datetime,
+        duration_minutes=data.duration_minutes,
         arena_name=data.arena_name,
         max_players=data.max_players,
         price=data.price,
@@ -140,6 +142,7 @@ def update_session(
     session.type = SessionType(data.type)
     session.visibility = SessionVisibility(data.visibility)
     session.datetime_ = data.datetime
+    session.duration_minutes = data.duration_minutes
     session.arena_name = data.arena_name
     session.max_players = data.max_players
     session.price = data.price

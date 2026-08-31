@@ -14,6 +14,7 @@ from app.models.player import Player
 from app.models.training_session import TrainingSession
 from app.models.user import User
 from app.schemas.coach_player import (
+    AttendanceHistoryEntryOut,
     AttendanceSummary,
     CoachPlayerInviteIn,
     CoachPlayerOut,
@@ -165,6 +166,55 @@ def get_my_player(
     if cp is None or cp.coach_id != user.id:
         raise HTTPException(status_code=404, detail="Запись не найдена")
     return _build_out(db, cp)
+
+
+@router.get(
+    "/coaches/me/players/{coach_player_id}/attendance",
+    response_model=list[AttendanceHistoryEntryOut],
+)
+def get_player_attendance_history(
+    coach_player_id: int,
+    user: User = Depends(require_role("coach")),
+    db: Session = Depends(get_db),
+):
+    """
+    История посещений конкретного ребёнка на тренировках ЭТОГО тренера —
+    все тренировки, куда он был confirmed-записан, с отметкой посещаемости
+    (или без неё, если ещё не отмечена).
+    """
+    cp = db.get(CoachPlayer, coach_player_id)
+    if cp is None or cp.coach_id != user.id:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+
+    bookings = (
+        db.query(Booking)
+        .join(TrainingSession, TrainingSession.id == Booking.session_id)
+        .filter(
+            TrainingSession.coach_id == cp.coach_id,
+            Booking.player_id == cp.player_id,
+            Booking.status == BookingStatus.confirmed,
+        )
+        .all()
+    )
+
+    attendance_by_session = {
+        a.session_id: a.status.value
+        for a in db.query(Attendance).filter(Attendance.player_id == cp.player_id).all()
+    }
+
+    entries = []
+    for b in bookings:
+        session = db.get(TrainingSession, b.session_id)
+        entries.append(
+            AttendanceHistoryEntryOut(
+                session_id=session.id,
+                session_type=session.type.value,
+                session_datetime=session.datetime_,
+                status=attendance_by_session.get(session.id),
+            )
+        )
+    entries.sort(key=lambda e: e.session_datetime, reverse=True)
+    return entries
 
 
 @router.delete("/coaches/me/players/{coach_player_id}", status_code=204)
