@@ -23,19 +23,40 @@ from app.services.notifications import notify
 router = APIRouter(tags=["arenas"])
 
 
-def _slot_out(slot: IceSlot, arena: Arena) -> IceSlotOut:
+def _slot_out(db: Session, slot: IceSlot, arena: Arena, include_booking: bool = False) -> IceSlotOut:
+    admin = db.get(User, arena.id)
+    booked_by_name = None
+    booked_by_phone = None
+
+    if include_booking and slot.status == SlotStatus.booked:
+        approved_request = (
+            db.query(SlotRequest)
+            .filter(SlotRequest.slot_id == slot.id, SlotRequest.status == SlotRequestStatus.approved)
+            .first()
+        )
+        if approved_request:
+            coach = db.get(User, approved_request.coach_id)
+            if coach:
+                booked_by_name = coach.name
+                booked_by_phone = coach.phone
+
     return IceSlotOut(
         id=slot.id,
         arena_id=arena.id,
         arena_name=arena.name,
         arena_city=arena.city,
         arena_address=arena.address,
+        arena_ice_size=arena.ice_size,
+        arena_locker_rooms=arena.locker_rooms,
+        arena_phone=arena.contact_phone or (admin.phone if admin else None),
         date=slot.date,
         time_start=slot.time_start,
         time_end=slot.time_end,
         ice_type=slot.ice_type.value,
         price=float(slot.price) if slot.price is not None else None,
         status=slot.status.value,
+        booked_by_coach_name=booked_by_name,
+        booked_by_coach_phone=booked_by_phone,
     )
 
 
@@ -65,6 +86,7 @@ def upsert_arena_profile(
     arena.city = data.city
     arena.ice_size = data.ice_size
     arena.locker_rooms = data.locker_rooms
+    arena.contact_phone = data.contact_phone
     db.commit()
     db.refresh(arena)
 
@@ -75,6 +97,7 @@ def upsert_arena_profile(
         city=arena.city,
         ice_size=arena.ice_size,
         locker_rooms=arena.locker_rooms,
+        contact_phone=arena.contact_phone,
     )
 
 
@@ -93,6 +116,7 @@ def get_arena_profile(
         city=arena.city,
         ice_size=arena.ice_size,
         locker_rooms=arena.locker_rooms,
+        contact_phone=arena.contact_phone,
     )
 
 
@@ -125,15 +149,20 @@ def publish_slot(
     db.add(slot)
     db.commit()
     db.refresh(slot)
-    return _slot_out(slot, arena)
+    return _slot_out(db, slot, arena)
 
 
 @router.get("/arenas/me/slots", response_model=list[IceSlotOut])
 def my_slots(
     status_filter: Optional[str] = Query(default=None, alias="status"),
+    when: Optional[str] = Query(
+        default="upcoming", description="'upcoming' (по умолчанию) или 'past'"
+    ),
     user: User = Depends(require_role("arena_admin")),
     db: Session = Depends(get_db),
 ):
+    from datetime import datetime
+
     arena = db.get(Arena, user.id)
     if arena is None:
         raise HTTPException(status_code=404, detail="Профиль арены ещё не заполнен")
@@ -142,7 +171,14 @@ def my_slots(
     if status_filter:
         query = query.filter(IceSlot.status == SlotStatus(status_filter))
     rows = query.order_by(IceSlot.date.asc(), IceSlot.time_start.asc()).all()
-    return [_slot_out(s, arena) for s in rows]
+
+    now = datetime.now()
+    if when == "past":
+        rows = [s for s in rows if datetime.combine(s.date, s.time_start) < now]
+    else:
+        rows = [s for s in rows if datetime.combine(s.date, s.time_start) >= now]
+
+    return [_slot_out(db, s, arena, include_booking=True) for s in rows]
 
 
 @router.delete("/arenas/me/slots/{slot_id}", status_code=204)
@@ -192,7 +228,7 @@ def my_requests(
         out.append(
             SlotRequestOut(
                 id=req.id,
-                slot=_slot_out(slot, arena),
+                slot=_slot_out(db, slot, arena),
                 coach_id=req.coach_id,
                 coach_name=coach.name if coach else None,
                 status=req.status.value,
@@ -228,7 +264,7 @@ def approve_request(
 
     return SlotRequestOut(
         id=req.id,
-        slot=_slot_out(slot, arena),
+        slot=_slot_out(db, slot, arena),
         coach_id=req.coach_id,
         coach_name=coach.name,
         status=req.status.value,
@@ -262,7 +298,7 @@ def reject_request(
 
     return SlotRequestOut(
         id=req.id,
-        slot=_slot_out(slot, arena),
+        slot=_slot_out(db, slot, arena),
         coach_id=req.coach_id,
         coach_name=coach.name,
         status=req.status.value,
@@ -300,7 +336,7 @@ def ice_slots_catalog(
     total = query.count()
     rows = query.order_by(IceSlot.date.asc(), IceSlot.time_start.asc()).offset(offset).limit(limit).all()
     return IceSlotListOut(
-        items=[_slot_out(s, a) for s, a in rows], total=total, limit=limit, offset=offset
+        items=[_slot_out(db, s, a) for s, a in rows], total=total, limit=limit, offset=offset
     )
 
 
@@ -328,7 +364,7 @@ def submit_slot_request(
 
     return SlotRequestOut(
         id=req.id,
-        slot=_slot_out(slot, arena),
+        slot=_slot_out(db, slot, arena),
         coach_id=req.coach_id,
         coach_name=user.name,
         status=req.status.value,
@@ -354,7 +390,7 @@ def my_ice_requests(
         out.append(
             SlotRequestOut(
                 id=req.id,
-                slot=_slot_out(slot, arena),
+                slot=_slot_out(db, slot, arena),
                 coach_id=req.coach_id,
                 coach_name=user.name,
                 status=req.status.value,
@@ -388,7 +424,7 @@ def cancel_ice_request(
 
     return SlotRequestOut(
         id=req.id,
-        slot=_slot_out(slot, arena),
+        slot=_slot_out(db, slot, arena),
         coach_id=req.coach_id,
         coach_name=user.name,
         status=req.status.value,

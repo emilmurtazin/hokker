@@ -12,6 +12,7 @@ class ArenaProfileIn(BaseModel):
     city: Optional[str] = Field(default=None, max_length=255)
     ice_size: Optional[str] = Field(default=None, max_length=100)
     locker_rooms: Optional[int] = Field(default=None, ge=0)
+    contact_phone: Optional[str] = Field(default=None, max_length=20)
 
 
 class ArenaProfileOut(BaseModel):
@@ -21,6 +22,7 @@ class ArenaProfileOut(BaseModel):
     city: Optional[str] = None
     ice_size: Optional[str] = None
     locker_rooms: Optional[int] = None
+    contact_phone: Optional[str] = None
 
 
 class IceSlotIn(BaseModel):
@@ -37,12 +39,20 @@ class IceSlotOut(BaseModel):
     arena_name: str
     arena_city: Optional[str] = None
     arena_address: Optional[str] = None
+    arena_ice_size: Optional[str] = None
+    arena_locker_rooms: Optional[int] = None
+    # Контакт для тренера — сначала явно указанный contact_phone арены,
+    # если не задан — номер, которым администратор входит в приложение.
+    arena_phone: Optional[str] = None
     date: date
     time_start: time
     time_end: time
     ice_type: ICE_TYPE
     price: Optional[float] = None
     status: str
+    # Заполняется только для владельца арены — кто забронировал этот слот.
+    booked_by_coach_name: Optional[str] = None
+    booked_by_coach_phone: Optional[str] = None
 
 
 class IceSlotListOut(BaseModel):

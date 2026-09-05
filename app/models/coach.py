@@ -1,10 +1,11 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, String, Integer, Text, DateTime, Enum, ForeignKey, func
+from sqlalchemy import BigInteger, Integer, Text, DateTime, Enum, ForeignKey, func
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.models.enums import Specialization
+from app.models.enums import ExerciseAgeGroup, Specialization
 
 
 class Coach(Base):
@@ -18,15 +19,17 @@ class Coach(Base):
     id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    specialization: Mapped[Specialization] = mapped_column(
-        Enum(Specialization, name="specialization"), nullable=False
+    # Массив — тренер может вести несколько направлений одновременно.
+    specializations: Mapped[list[Specialization]] = mapped_column(
+        ARRAY(Enum(Specialization, name="specialization")), nullable=False
     )
     experience_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
     about: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Возрастные группы храним как текст с перечислением через запятую,
-    # например "6-9,10-12,13+" — для Этапа 1 этого достаточно,
-    # при необходимости позже можно вынести в отдельную таблицу.
-    age_groups: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Массив фиксированных возрастных категорий (те же, что и в видеоупражнениях) —
+    # тренер может выбрать несколько.
+    age_groups: Mapped[list[ExerciseAgeGroup] | None] = mapped_column(
+        ARRAY(Enum(ExerciseAgeGroup, name="exercise_age_group")), nullable=True
+    )
     visible_in_search: Mapped[bool] = mapped_column(
         default=True, server_default="true", nullable=False
     )

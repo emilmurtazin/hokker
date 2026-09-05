@@ -3,15 +3,15 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-SPECIALIZATIONS = Literal["skating", "shooting", "off_ice", "goalie", "general"]
+SPECIALIZATION = Literal["skating", "shooting", "off_ice", "goalie", "general"]
+AGE_GROUP = Literal["6-9", "10-12", "13+"]
 
 
 class CoachProfileIn(BaseModel):
-    specialization: SPECIALIZATIONS
+    specializations: List[SPECIALIZATION] = Field(..., min_length=1)
     experience_years: Optional[int] = Field(default=None, ge=0, le=60)
     about: Optional[str] = Field(default=None, max_length=2000)
-    # через запятую, например "6-9,10-12,13+"
-    age_groups: Optional[str] = Field(default=None, max_length=255)
+    age_groups: List[AGE_GROUP] = Field(default_factory=list)
     visible_in_search: bool = True
 
 
@@ -19,10 +19,10 @@ class CoachProfileOut(BaseModel):
     id: int
     name: str
     city: Optional[str] = None
-    specialization: str
+    specializations: List[str]
     experience_years: Optional[int] = None
     about: Optional[str] = None
-    age_groups: Optional[str] = None
+    age_groups: List[str] = []
     visible_in_search: bool = True
 
 
@@ -37,7 +37,7 @@ class TrainingSessionShortOut(BaseModel):
 class CoachCardOut(BaseModel):
     id: int
     name: str
-    specialization: str
+    specializations: List[str]
     experience_years: Optional[int] = None
     next_open_sessions: List[TrainingSessionShortOut]
 

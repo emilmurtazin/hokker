@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_role
 from app.core.database import get_db
 from app.models.coach import Coach
-from app.models.enums import Specialization, UserRole
+from app.models.enums import ExerciseAgeGroup, Specialization, UserRole
 from app.models.training_session import TrainingSession
 from app.models.enums import SessionVisibility
 from app.models.user import User
@@ -28,10 +28,10 @@ def _build_profile_out(coach: Coach, user: User) -> CoachProfileOut:
         id=user.id,
         name=user.name,
         city=user.city,
-        specialization=coach.specialization.value,
+        specializations=[s.value for s in coach.specializations],
         experience_years=coach.experience_years,
         about=coach.about,
-        age_groups=coach.age_groups,
+        age_groups=[a.value for a in (coach.age_groups or [])],
         visible_in_search=coach.visible_in_search,
     )
 
@@ -47,10 +47,10 @@ def upsert_my_profile(
         coach = Coach(id=user.id)
         db.add(coach)
 
-    coach.specialization = Specialization(data.specialization)
+    coach.specializations = [Specialization(s) for s in data.specializations]
     coach.experience_years = data.experience_years
     coach.about = data.about
-    coach.age_groups = data.age_groups
+    coach.age_groups = [ExerciseAgeGroup(a) for a in data.age_groups] or None
     coach.visible_in_search = data.visible_in_search
     db.commit()
     db.refresh(coach)
@@ -82,9 +82,11 @@ def get_coach_profile(coach_id: int, db: Session = Depends(get_db)):
 @router.get("", response_model=CoachCatalogOut)
 def catalog(
     city: str = Query(..., description="Город — обязательный фильтр"),
-    specialization: Optional[str] = Query(default=None),
+    specialization: Optional[str] = Query(
+        default=None, description="Тренер найдётся, если эта специализация есть среди его"
+    ),
     age_group: Optional[str] = Query(
-        default=None, description="Например '10-12' — ищет подстрокой в age_groups"
+        default=None, description="Например '10-12' — тренер найдётся, если ведёт эту группу"
     ),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -97,9 +99,9 @@ def catalog(
     )
 
     if specialization:
-        query = query.filter(Coach.specialization == Specialization(specialization))
+        query = query.filter(Coach.specializations.any(Specialization(specialization)))
     if age_group:
-        query = query.filter(Coach.age_groups.ilike(f"%{age_group}%"))
+        query = query.filter(Coach.age_groups.any(ExerciseAgeGroup(age_group)))
 
     total = query.count()
     rows = query.order_by(User.id).offset(offset).limit(limit).all()
@@ -125,7 +127,7 @@ def catalog(
             CoachCardOut(
                 id=user.id,
                 name=user.name,
-                specialization=coach.specialization.value,
+                specializations=[s.value for s in coach.specializations],
                 experience_years=coach.experience_years,
                 next_open_sessions=[
                     TrainingSessionShortOut(

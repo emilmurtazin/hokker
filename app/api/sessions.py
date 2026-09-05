@@ -10,7 +10,14 @@ from app.core.database import get_db
 from app.models.booking import Booking
 from app.models.coach import Coach
 from app.models.coach_player import CoachPlayer
-from app.models.enums import BookingStatus, CoachPlayerStatus, SessionType, SessionVisibility
+from app.models.enums import (
+    BookingStatus,
+    CoachPlayerStatus,
+    ExerciseAgeGroup,
+    SessionType,
+    SessionVisibility,
+    Specialization,
+)
 from app.models.player import Player
 from app.models.training_session import TrainingSession
 from app.models.user import User
@@ -58,6 +65,12 @@ def _to_out(db: Session, s: TrainingSession) -> TrainingSessionOut:
 def sessions_feed(
     city: str = Query(..., description="Город — обязательный фильтр"),
     type: Optional[str] = Query(default=None, alias="type"),
+    specialization: Optional[str] = Query(
+        default=None, description="Фильтр по специализации тренера — как в каталоге тренеров"
+    ),
+    age_group: Optional[str] = Query(
+        default=None, description="Фильтр по возрастной группе тренера — как в каталоге тренеров"
+    ),
     date_from: Optional[str] = Query(default=None),
     date_to: Optional[str] = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
@@ -66,7 +79,8 @@ def sessions_feed(
 ):
     """
     Общая лента открытых будущих тренировок по всем тренерам города —
-    альтернатива поиску через конкретный профиль тренера.
+    альтернатива поиску через конкретный профиль тренера. Поддерживает те
+    же фильтры категорий, что и каталог тренеров (специализация, возраст).
     """
     query = (
         db.query(TrainingSession, User.name)
@@ -81,6 +95,10 @@ def sessions_feed(
     )
     if type:
         query = query.filter(TrainingSession.type == SessionType(type))
+    if specialization:
+        query = query.filter(Coach.specializations.any(Specialization(specialization)))
+    if age_group:
+        query = query.filter(Coach.age_groups.any(ExerciseAgeGroup(age_group)))
     if date_from:
         query = query.filter(TrainingSession.datetime_ >= date_from)
     if date_to:
