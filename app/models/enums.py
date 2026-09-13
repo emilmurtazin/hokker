@@ -29,6 +29,17 @@ class ExerciseLevel(str, enum.Enum):
     advanced = "advanced"          # продвинутый
 
 
+class ExerciseLocation(str, enum.Enum):
+    on_ice = "on_ice"      # на льду
+    gym = "gym"            # в зале
+    off_ice = "off_ice"    # вне льда (дома)
+
+
+class ExerciseContentStatus(str, enum.Enum):
+    complete = "complete"  # карточка заполнена полностью
+    draft = "draft"        # есть только название и качества, описание в работе
+
+
 class Specialization(str, enum.Enum):
     skating = "skating"          # катание
     shooting = "shooting"        # броски

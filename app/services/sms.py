@@ -48,7 +48,7 @@ class SMSRuProvider(SMSProvider):
             params={
                 "api_id": settings.SMSRU_API_ID,
                 "to": phone,
-                "msg": f"Код подтверждения ХОККЕР: {code}",
+                "msg": f"Код подтверждения 24hokker.ru: {code}",
                 "json": 1,
             },
             timeout=10.0,

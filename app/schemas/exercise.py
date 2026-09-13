@@ -4,34 +4,55 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 EXERCISE_CATEGORY = Literal["skating", "stickhandling", "shooting", "strength", "goalie", "game"]
+EXERCISE_LOCATION = Literal["on_ice", "gym", "off_ice"]
 AGE_GROUP = Literal["6-9", "10-12", "13+"]
-LEVEL = Literal["beginner", "intermediate", "advanced"]
+CONTENT_STATUS = Literal["complete", "draft"]
 
 
 class ExerciseIn(BaseModel):
+    code: Optional[str] = Field(default=None, max_length=20)
     title: str = Field(..., min_length=1, max_length=255)
-    category: EXERCISE_CATEGORY
-    age_group: AGE_GROUP
-    level: LEVEL
-    video_url: str = Field(..., max_length=1000)
     description: Optional[str] = None
-    repetitions: Optional[str] = Field(default=None, max_length=255)
-    key_points: Optional[str] = None
+    category: EXERCISE_CATEGORY
+    location: EXERCISE_LOCATION
+    age_group: AGE_GROUP
+    players_text: Optional[str] = Field(default=None, max_length=50)
+    duration_text: Optional[str] = Field(default=None, max_length=50)
+    equipment_text: Optional[str] = Field(default=None, max_length=255)
+    needs_puck: Optional[bool] = None
+    steps: Optional[List[str]] = None
+    coach_tips: Optional[List[str]] = None
+    simplify_tips: Optional[List[str]] = None
+    complicate_tips: Optional[List[str]] = None
+    hockey_connection: Optional[str] = None
+    qualities: Optional[List[str]] = None
+    content_status: CONTENT_STATUS = "draft"
+    video_url: Optional[str] = Field(default=None, max_length=1000)
+    image_url: Optional[str] = Field(default=None, max_length=1000)
 
 
 class ExerciseOut(BaseModel):
     id: int
+    code: Optional[str] = None
     title: str
-    category: EXERCISE_CATEGORY
-    age_group: AGE_GROUP
-    level: LEVEL
-    video_url: str
     description: Optional[str] = None
-    repetitions: Optional[str] = None
-    key_points: Optional[str] = None
+    category: EXERCISE_CATEGORY
+    location: EXERCISE_LOCATION
+    age_group: AGE_GROUP
+    players_text: Optional[str] = None
+    duration_text: Optional[str] = None
+    equipment_text: Optional[str] = None
+    needs_puck: Optional[bool] = None
+    steps: Optional[List[str]] = None
+    coach_tips: Optional[List[str]] = None
+    simplify_tips: Optional[List[str]] = None
+    complicate_tips: Optional[List[str]] = None
+    hockey_connection: Optional[str] = None
+    qualities: Optional[List[str]] = None
+    content_status: CONTENT_STATUS
+    video_url: Optional[str] = None
+    image_url: Optional[str] = None
     created_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 class ExerciseListOut(BaseModel):

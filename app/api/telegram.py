@@ -53,7 +53,7 @@ async def telegram_webhook(
 
     parts = text.split(maxsplit=1)
     if len(parts) < 2:
-        send_message(str(chat_id), "Эта ссылка должна открываться из приложения ХОККЕР.")
+        send_message(str(chat_id), "Эта ссылка должна открываться из приложения 24hokker.ru.")
         return {"ok": True}
 
     token = parts[1]
@@ -75,5 +75,5 @@ async def telegram_webhook(
     user.telegram_chat_id = str(chat_id)
     db.commit()
 
-    send_message(str(chat_id), "✅ Telegram успешно привязан к вашему аккаунту ХОККЕР!")
+    send_message(str(chat_id), "✅ Telegram успешно привязан к вашему аккаунту 24hokker.ru!")
     return {"ok": True}

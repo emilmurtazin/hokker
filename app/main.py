@@ -19,7 +19,7 @@ from app.api.exercises import router as exercises_router
 from app.api.telegram import router as telegram_router
 
 app = FastAPI(
-    title="ХОККЕР API",
+    title="24hokker.ru API",
     description="Платформа для тренеров, родителей и арен",
     version="0.1.0",
 )
