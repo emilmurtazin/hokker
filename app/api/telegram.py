@@ -87,10 +87,24 @@ async def telegram_webhook(
         }
         return reply(text_out, markup)
 
-    parts = text.split(maxsplit=1)
-    if len(parts) < 2:
-        # Открыли бота напрямую, без ?start=<token> из приложения.
-        return reply_welcome()
+parts = text.split(maxsplit=1)
+if len(parts) < 2:
+    # Пользователь открыл бота напрямую, без ?start=<token> из приложения.
+    # Отвечаем приветствием и кнопкой, которая ведёт на сайт — точно как
+    # в проекте spasibo-kollege (_cmd_start без токена).
+    text_out = (
+        "👋 Привет! Я бот Хоккер.\n\n"
+        "Чтобы привязать Telegram к вашему аккаунту:\n"
+        "1. Войдите в приложение 24hokker.ru\n"
+        "2. Перейдите в Профиль → «Привязать Telegram»\n"
+        "3. Нажмите кнопку — откроется бот прямо в Telegram"
+    )
+    markup = {
+        "inline_keyboard": [[
+            {"text": "🔗 Перейти на сайт", "url": "https://24hokker.ru"}
+        ]]
+    }
+    return reply(text_out, markup)
 
     token = parts[1]
     try:
