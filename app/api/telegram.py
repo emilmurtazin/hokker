@@ -36,11 +36,6 @@ async def telegram_webhook(
     """
     Сюда Telegram сам присылает апдейты (после настройки через setWebhook).
     Не вызывается напрямую из приложения — это эндпоинт для внешнего сервиса.
-
-    Ответы пользователю отправляются в фоне (BackgroundTasks): Telegram ждёт
-    ответ на вебхук считанные секунды и при таймауте повторяет апдейт, а
-    отправка идёт через прокси и синхронным httpx — в async-обработчике она
-    заблокировала бы весь event loop.
     """
     if settings.TELEGRAM_WEBHOOK_SECRET:
         received = (x_telegram_bot_api_secret_token or "").encode()
@@ -51,7 +46,6 @@ async def telegram_webhook(
     update = await request.json()
     message = update.get("message")
     if not message:
-        # Не текстовое сообщение (например, edited_message, callback_query) — игнорируем.
         return {"ok": True}
 
     text = message.get("text") or ""
@@ -61,8 +55,6 @@ async def telegram_webhook(
     if not text.startswith("/start") or chat_id is None:
         return {"ok": True}
 
-    # Привязываем только личные чаты: если бота добавили в группу, в chat_id
-    # окажется id группы, и уведомления пользователя уходили бы всем участникам.
     if chat.get("type") != "private":
         return {"ok": True}
 
@@ -110,9 +102,6 @@ async def telegram_webhook(
     if user is None:
         return reply("Пользователь не найден.")
 
-    # telegram_chat_id уникален. Без этой проверки повторная привязка чата к
-    # другому аккаунту падала бы с IntegrityError → 500, а Telegram повторял бы
-    # такой апдейт снова и снова.
     already_taken = (
         db.query(User)
         .filter(User.telegram_chat_id == str(chat_id), User.id != user.id)
