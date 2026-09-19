@@ -1,6 +1,8 @@
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_role
@@ -161,8 +163,6 @@ def my_slots(
     user: User = Depends(require_role("arena_admin")),
     db: Session = Depends(get_db),
 ):
-    from datetime import datetime
-
     arena = db.get(Arena, user.id)
     if arena is None:
         raise HTTPException(status_code=404, detail="Профиль арены ещё не заполнен")
@@ -231,6 +231,7 @@ def my_requests(
                 slot=_slot_out(db, slot, arena),
                 coach_id=req.coach_id,
                 coach_name=coach.name if coach else None,
+                coach_phone=coach.phone if coach else None,
                 status=req.status.value,
                 created_at=req.created_at,
             )
@@ -321,8 +322,16 @@ def ice_slots_catalog(
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
+    now = datetime.now()
     query = db.query(IceSlot, Arena).join(Arena, Arena.id == IceSlot.arena_id).filter(
-        IceSlot.status == SlotStatus.available
+        IceSlot.status == SlotStatus.available,
+        # В каталоге доступен только лёд, который ещё не начался. Это условие
+        # должно быть на сервере, чтобы прошедший слот нельзя было получить
+        # через прямой запрос к API.
+        or_(
+            IceSlot.date > now.date(),
+            and_(IceSlot.date == now.date(), IceSlot.time_start > now.time()),
+        ),
     )
     if city:
         query = query.filter(Arena.city == city)
@@ -349,6 +358,8 @@ def submit_slot_request(
     slot = db.get(IceSlot, slot_id)
     if slot is None:
         raise HTTPException(status_code=404, detail="Слот не найден")
+    if datetime.combine(slot.date, slot.time_start) <= datetime.now():
+        raise HTTPException(status_code=409, detail="Нельзя подать заявку на уже начавшийся слот")
     if slot.status != SlotStatus.available:
         raise HTTPException(status_code=409, detail="Слот уже занят или заблокирован другой заявкой")
 

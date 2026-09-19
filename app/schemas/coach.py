@@ -3,7 +3,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-SPECIALIZATION = Literal["skating", "shooting", "off_ice", "goalie", "general"]
+SPECIALIZATION = Literal["ice", "off_ice", "shooting", "theory", "game", "goalie"]
 AGE_GROUP = Literal["6-9", "10-12", "13+"]
 
 

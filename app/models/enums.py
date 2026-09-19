@@ -41,11 +41,12 @@ class ExerciseContentStatus(str, enum.Enum):
 
 
 class Specialization(str, enum.Enum):
-    skating = "skating"          # катание
-    shooting = "shooting"        # броски
-    off_ice = "off_ice"          # ОФП
-    goalie = "goalie"            # вратарская техника
-    general = "general"          # общая подготовка
+    ice = "ice"
+    off_ice = "off_ice"
+    shooting = "shooting"
+    theory = "theory"
+    game = "game"
+    goalie = "goalie"
 
 
 class Position(str, enum.Enum):
@@ -66,6 +67,7 @@ class SessionType(str, enum.Enum):
     shooting = "shooting"
     theory = "theory"
     game = "game"
+    goalie = "goalie"
 
 
 class SessionVisibility(str, enum.Enum):

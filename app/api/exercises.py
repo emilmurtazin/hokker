@@ -115,7 +115,7 @@ def send_exercise(
     )
     if cp is None:
         raise HTTPException(
-            status_code=403, detail="Можно отправлять упражнения только своим активным клиентам"
+            status_code=403, detail="Можно отправлять упражнения только своим активным ученикам"
         )
 
     child = db.get(Player, data.child_id)

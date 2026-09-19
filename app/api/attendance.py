@@ -31,7 +31,11 @@ def get_session_attendance(
     # Список записанных — только confirmed (те, кто реально придёт).
     bookings = (
         db.query(Booking)
-        .filter(Booking.session_id == session_id, Booking.status == BookingStatus.confirmed)
+        .filter(
+            Booking.session_id == session_id,
+            Booking.status == BookingStatus.confirmed,
+            Booking.player_id.is_not(None),
+        )
         .all()
     )
     existing_marks = {

@@ -46,7 +46,11 @@ def _get_session_owned_by(db: Session, session_id: int, coach: User) -> Training
 def _confirmed_player_ids(db: Session, session_id: int) -> set[int]:
     rows = (
         db.query(Booking.player_id)
-        .filter(Booking.session_id == session_id, Booking.status == BookingStatus.confirmed)
+        .filter(
+            Booking.session_id == session_id,
+            Booking.status == BookingStatus.confirmed,
+            Booking.player_id.is_not(None),
+        )
         .all()
     )
     return {r[0] for r in rows}

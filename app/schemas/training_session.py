@@ -3,7 +3,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-SESSION_TYPES = Literal["ice", "off_ice", "shooting", "theory", "game"]
+SESSION_TYPES = Literal["ice", "off_ice", "shooting", "theory", "game", "goalie"]
 SESSION_VISIBILITY = Literal["open", "closed"]
 
 

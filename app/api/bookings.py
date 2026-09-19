@@ -13,7 +13,7 @@ from app.models.enums import BookingStatus, CoachPlayerStatus
 from app.models.player import Player
 from app.models.training_session import TrainingSession
 from app.models.user import User
-from app.schemas.booking import BookingIn, BookingOut
+from app.schemas.booking import BookingIn, BookingOut, ManualBookingIn
 from app.services.notifications import notify
 
 router = APIRouter(tags=["bookings"])
@@ -52,7 +52,7 @@ def _to_booking_out(db: Session, booking: Booking) -> BookingOut:
         id=booking.id,
         session_id=booking.session_id,
         player_id=booking.player_id,
-        player_name=player.name if player else None,
+        player_name=player.name if player else booking.manual_player_name,
         player_age=_age(player.birth_date) if player else None,
         player_position=player.position.value if player else None,
         parent_name=parent.name if parent else None,
@@ -185,6 +185,53 @@ def create_booking(
     elif new_status == BookingStatus.confirmed:
         notify("new_booking", coach, session_title=_session_title(session))
 
+    return _to_booking_out(db, booking)
+
+
+@router.post("/sessions/{session_id}/manual-bookings", response_model=BookingOut)
+def create_manual_booking(
+    session_id: int,
+    data: ManualBookingIn,
+    user: User = Depends(require_role("coach")),
+    db: Session = Depends(get_db),
+):
+    """Тренер добавляет ученика без учётной записи в приложении."""
+    session = db.get(TrainingSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Тренировка не найдена")
+    if session.coach_id != user.id:
+        raise HTTPException(status_code=403, detail="Доступно только владельцу тренировки")
+    if session.datetime_ < datetime.now(timezone.utc):
+        raise HTTPException(status_code=409, detail="Тренировка уже прошла")
+    if _confirmed_count(db, session_id) >= session.max_players:
+        raise HTTPException(status_code=409, detail="На тренировке больше нет свободных мест")
+
+    player_name = data.player_name.strip()
+    if not player_name:
+        raise HTTPException(status_code=422, detail="Укажите имя ученика")
+
+    existing = (
+        db.query(Booking)
+        .filter(
+            Booking.session_id == session_id,
+            Booking.player_id.is_(None),
+            func.lower(Booking.manual_player_name) == player_name.lower(),
+            Booking.status == BookingStatus.confirmed,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Ученик с таким именем уже добавлен")
+
+    booking = Booking(
+        session_id=session_id,
+        player_id=None,
+        manual_player_name=player_name,
+        status=BookingStatus.confirmed,
+    )
+    db.add(booking)
+    db.commit()
+    db.refresh(booking)
     return _to_booking_out(db, booking)
 
 

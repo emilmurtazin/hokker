@@ -67,5 +67,6 @@ class SlotRequestOut(BaseModel):
     slot: IceSlotOut
     coach_id: int
     coach_name: Optional[str] = None
+    coach_phone: Optional[str] = None
     status: str
     created_at: datetime

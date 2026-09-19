@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -23,9 +23,11 @@ class Booking(Base):
     session_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("training_sessions.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    player_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("players.id", ondelete="CASCADE"), nullable=False, index=True
+    player_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("players.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    # Для ученика, которого ещё нет в приложении, тренер указывает только имя.
+    manual_player_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[BookingStatus] = mapped_column(
         Enum(BookingStatus, name="booking_status"), nullable=False, default=BookingStatus.pending
     )
