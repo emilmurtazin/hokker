@@ -13,6 +13,7 @@ class TrainingSessionIn(BaseModel):
     datetime: datetime
     duration_minutes: int = Field(default=60, ge=15, le=480)
     arena_name: Optional[str] = Field(default=None, max_length=255)
+    arena_id: Optional[int] = None
     max_players: int = Field(..., ge=1, le=100)
     price: Optional[float] = Field(default=None, ge=0)
 
@@ -34,6 +35,9 @@ class TrainingSessionOut(BaseModel):
     datetime: datetime
     duration_minutes: int
     arena_name: Optional[str] = None
+    arena_address: Optional[str] = None
+    coach_name: Optional[str] = None
+    coach_phone: Optional[str] = None
     max_players: int
     price: Optional[float] = None
     booked_count: int = 0

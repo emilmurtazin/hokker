@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_role
 from app.core.database import get_db
 from app.models.booking import Booking
+from app.models.arena import Arena
 from app.models.coach import Coach
 from app.models.coach_player import CoachPlayer
 from app.models.enums import (
@@ -47,6 +48,8 @@ def _session_title(s: TrainingSession) -> str:
 
 
 def _to_out(db: Session, s: TrainingSession) -> TrainingSessionOut:
+    arena = db.get(Arena, s.arena_id) if s.arena_id else None
+    coach = db.get(User, s.coach_id)
     return TrainingSessionOut(
         id=s.id,
         coach_id=s.coach_id,
@@ -55,6 +58,9 @@ def _to_out(db: Session, s: TrainingSession) -> TrainingSessionOut:
         datetime=s.datetime_,
         duration_minutes=s.duration_minutes,
         arena_name=s.arena_name,
+        arena_address=arena.address if arena else None,
+        coach_name=coach.name if coach else None,
+        coach_phone=coach.phone if coach else None,
         max_players=s.max_players,
         price=float(s.price) if s.price is not None else None,
         booked_count=_booked_count(db, s.id),
@@ -107,10 +113,7 @@ def sessions_feed(
     total = query.count()
     rows = query.order_by(TrainingSession.datetime_.asc()).offset(offset).limit(limit).all()
 
-    items = [
-        TrainingSessionFeedOut(**_to_out(db, s).model_dump(), coach_name=coach_name)
-        for s, coach_name in rows
-    ]
+    items = [TrainingSessionFeedOut(**_to_out(db, s).model_dump()) for s, _ in rows]
     return TrainingSessionFeedListOut(items=items, total=total, limit=limit, offset=offset)
 
 
@@ -126,6 +129,7 @@ def create_session(
         visibility=SessionVisibility(data.visibility),
         datetime_=data.datetime,
         duration_minutes=data.duration_minutes,
+        arena_id=data.arena_id,
         arena_name=data.arena_name,
         max_players=data.max_players,
         price=data.price,
