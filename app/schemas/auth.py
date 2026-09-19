@@ -41,6 +41,8 @@ class UserOut(BaseModel):
     name: str
     phone: str
     city: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    telegram_deep_link: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
