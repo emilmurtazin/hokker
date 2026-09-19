@@ -1,4 +1,5 @@
 from app.models.user import User
+from app.models.telegram_link_token import TelegramLinkToken
 from app.models.coach import Coach
 from app.models.player import Player
 from app.models.coach_player import CoachPlayer
@@ -15,6 +16,7 @@ from app.models.refresh_token import RefreshToken
 
 __all__ = [
     "User",
+    "TelegramLinkToken",
     "Coach",
     "Player",
     "CoachPlayer",
