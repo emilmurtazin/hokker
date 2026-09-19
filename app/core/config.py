@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_USERNAME: str = ""  # без @, например hokker_bot
     TELEGRAM_WEBHOOK_SECRET: str = ""  # см. app/api/telegram.py
     TELEGRAM_PROXY_URL: str = ""  # см. app/services/telegram.py — обход блокировки РКН
+    APP_PUBLIC_URL: str = ""   # https://24hokker.ru — для кнопки «Открыть Хоккер»
 
     # Список разрешённых доменов фронтенда через запятую, например:
     # "https://hokker-frontend.twc1.net,http://localhost:5173"
