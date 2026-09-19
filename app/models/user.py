@@ -26,3 +26,7 @@ class User(Base):
     # связи
     coach_profile: Mapped["Coach"] = relationship(back_populates="user", uselist=False)
     children: Mapped[list["Player"]] = relationship(back_populates="parent")
+    telegram_link_tokens: Mapped[list["TelegramLinkToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    
