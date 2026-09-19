@@ -74,37 +74,23 @@ async def telegram_webhook(
         """Приветствие для тех, кто открыл бота напрямую (без deep-link)."""
         app_url = settings.APP_PUBLIC_URL or "https://24hokker.ru"
         text_out = (
-            "👋 Привет! Я бот Хоккер — через меня приходят уведомления "
-            "о тренировках и записях.\n\n"
-            "Чтобы начать, откройте приложение и привяжите Telegram "
-            "в разделе «Профиль»:\n"
-            f"{app_url}"
+            "👋 Привет! Я бот Хоккер.\n\n"
+            "Чтобы привязать Telegram к вашему аккаунту:\n"
+            "1. Войдите в приложение 24hokker.ru\n"
+            "2. Перейдите в Профиль → «Привязать Telegram»\n"
+            "3. Нажмите кнопку — откроется бот прямо в Telegram"
         )
         markup = {
             "inline_keyboard": [
-                [{"text": "🏒 Открыть Хоккер", "url": app_url}],
+                [{"text": "🔗 Перейти на сайт", "url": app_url}],
             ]
         }
         return reply(text_out, markup)
 
-parts = text.split(maxsplit=1)
-if len(parts) < 2:
-    # Пользователь открыл бота напрямую, без ?start=<token> из приложения.
-    # Отвечаем приветствием и кнопкой, которая ведёт на сайт — точно как
-    # в проекте spasibo-kollege (_cmd_start без токена).
-    text_out = (
-        "👋 Привет! Я бот Хоккер.\n\n"
-        "Чтобы привязать Telegram к вашему аккаунту:\n"
-        "1. Войдите в приложение 24hokker.ru\n"
-        "2. Перейдите в Профиль → «Привязать Telegram»\n"
-        "3. Нажмите кнопку — откроется бот прямо в Telegram"
-    )
-    markup = {
-        "inline_keyboard": [[
-            {"text": "🔗 Перейти на сайт", "url": "https://24hokker.ru"}
-        ]]
-    }
-    return reply(text_out, markup)
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        # Пользователь открыл бота напрямую, без ?start=<token> из приложения.
+        return reply_welcome()
 
     token = parts[1]
     try:
