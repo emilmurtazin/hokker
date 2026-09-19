@@ -1,28 +1,41 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import create_telegram_link_token
 from app.models.user import User
+from app.models.telegram_link_token import TelegramLinkToken
 from app.schemas.auth import UserOut, UserUpdateIn
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-def _build_user_out(user: User) -> UserOut:
+def _build_user_out(user: User, db: Session) -> UserOut:
     """
-    Собирает ответ профиля. Ссылку на бота генерируем сразу при запросе —
-    так она попадает в HTML с первого рендера, и переход работает нативной
-    навигацией браузера (как в spasibo-kollege).
+    Собирает ответ профиля. Короткий токен привязки Telegram генерируется
+    и сохраняется в БД прямо здесь — он уходит в deep-link.
     """
     out = UserOut.model_validate(user)
 
     if settings.TELEGRAM_BOT_USERNAME:
-        token = create_telegram_link_token(user.id)
+        # Удаляем все прежние неиспользованные токены пользователя
+        db.execute(
+            delete(TelegramLinkToken).where(
+                TelegramLinkToken.user_id == user.id,
+                TelegramLinkToken.used.is_(False),
+            )
+        )
+        # Создаём новый
+        import secrets
+        link = TelegramLinkToken(user_id=user.id, token=secrets.token_urlsafe(32))
+        db.add(link)
+        db.commit()
+        db.refresh(link)
+
         out.telegram_deep_link = (
-            f"https://t.me/{settings.TELEGRAM_BOT_USERNAME}?start={token}"
+            f"https://t.me/{settings.TELEGRAM_BOT_USERNAME}?start={link.token}"
         )
     else:
         out.telegram_deep_link = None
@@ -31,8 +44,8 @@ def _build_user_out(user: User) -> UserOut:
 
 
 @router.get("/me", response_model=UserOut)
-def get_me(user: User = Depends(get_current_user)):
-    return _build_user_out(user)
+def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _build_user_out(user, db)
 
 
 @router.patch("/me", response_model=UserOut)
@@ -46,4 +59,4 @@ def update_me(
         setattr(user, field, value)
     db.commit()
     db.refresh(user)
-    return _build_user_out(user)
+    return _build_user_out(user, db)
