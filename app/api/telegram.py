@@ -65,7 +65,30 @@ async def telegram_webhook(
     chat = message.get("chat") or {}
     chat_id = chat.get("id")
 
-    if not text.startswith("/start") or chat_id is None:
+    if chat_id is None:
+        return {"ok": True}
+
+    # /whoami — показать, к какому аккаунту привязан этот Telegram
+    if text.strip() == "/whoami":
+        user = (
+            db.query(User)
+            .filter(User.telegram_chat_id == str(chat_id))
+            .first()
+        )
+        if user is None:
+            return reply(
+                "Этот Telegram не привязан ни к одному аккаунту 24hokker.ru.\n"
+                "Откройте приложение → Профиль → «Привязать Telegram»."
+            )
+        return reply(
+            f"👤 Аккаунт: <b>{user.name}</b>\n"
+            f"📞 Телефон: {user.phone}\n"
+            f"🎭 Роль: {user.role.value}\n"
+            f"🆔 User ID: {user.id}\n"
+            f"💬 Chat ID: {chat_id}"
+        )
+
+    if not text.startswith("/start"):
         return {"ok": True}
     if chat.get("type") != "private":
         return {"ok": True}
