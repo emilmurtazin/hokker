@@ -9,7 +9,7 @@ Telegram не будет удлинять время ответа основно
 """
 
 from app.models.user import User
-from app.services.telegram import send_message
+from app.services.telegram import esc, send_message
 
 # Тексты соответствуют таблице событий из раздела 9 ТЗ.
 _TEMPLATES = {
@@ -46,5 +46,8 @@ def notify(event: str, user: User, **context) -> None:
     if template is None:
         raise ValueError(f"Неизвестное событие уведомления: {event}")
 
-    text = template.format(**context)
+    # Значения приходят из БД/пользовательского ввода (названия, имена) —
+    # экранируем, т.к. send_message шлёт с parse_mode=HTML.
+    safe_context = {key: esc(value) for key, value in context.items()}
+    text = template.format(**safe_context)
     send_message(user.telegram_chat_id, text)

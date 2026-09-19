@@ -23,7 +23,7 @@ from app.schemas.coach_player import (
     ParentLookupOut,
 )
 from app.services.notifications import notify
-from app.services.telegram import send_message
+from app.services.telegram import esc, send_message_or_http_error
 
 router = APIRouter(tags=["coach_players"])
 
@@ -247,7 +247,10 @@ def message_parent(
     if not parent.telegram_chat_id:
         raise HTTPException(status_code=409, detail="У родителя не привязан Telegram")
 
-    send_message(parent.telegram_chat_id, f"✉️ Сообщение от тренера {user.name}:\n\n{data.text}")
+    send_message_or_http_error(
+        parent.telegram_chat_id,
+        f"✉️ Сообщение от тренера {esc(user.name)}:\n\n{esc(data.text)}",
+    )
     return None
 
 

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+import hmac
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
 
 from sqlalchemy.orm import Session
 
@@ -28,15 +30,23 @@ def get_link(user: User = Depends(get_current_user)):
 @router.post("/internal/telegram/webhook")
 async def telegram_webhook(
     request: Request,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
 ):
     """
     Сюда Telegram сам присылает апдейты (после настройки через setWebhook).
     Не вызывается напрямую из приложения — это эндпоинт для внешнего сервиса.
+
+    Ответы пользователю отправляются в фоне (BackgroundTasks): Telegram ждёт
+    ответ на вебхук считанные секунды и при таймауте повторяет апдейт, а
+    отправка идёт через прокси и синхронным httpx — в async-обработчике она
+    заблокировала бы весь event loop.
     """
     if settings.TELEGRAM_WEBHOOK_SECRET:
-        if x_telegram_bot_api_secret_token != settings.TELEGRAM_WEBHOOK_SECRET:
+        received = (x_telegram_bot_api_secret_token or "").encode()
+        expected = settings.TELEGRAM_WEBHOOK_SECRET.encode()
+        if not hmac.compare_digest(received, expected):
             raise HTTPException(status_code=401, detail="Неверный секрет вебхука")
 
     update = await request.json()
@@ -45,35 +55,60 @@ async def telegram_webhook(
         # Не текстовое сообщение (например, edited_message, callback_query) — игнорируем.
         return {"ok": True}
 
-    text = message.get("text", "")
-    chat_id = message.get("chat", {}).get("id")
+    text = message.get("text") or ""
+    chat = message.get("chat") or {}
+    chat_id = chat.get("id")
 
     if not text.startswith("/start") or chat_id is None:
         return {"ok": True}
 
+    # Привязываем только личные чаты: если бота добавили в группу, в chat_id
+    # окажется id группы, и уведомления пользователя уходили бы всем участникам.
+    if chat.get("type") != "private":
+        return {"ok": True}
+
+    def reply(reply_text: str) -> dict:
+        background.add_task(send_message, str(chat_id), reply_text)
+        return {"ok": True}
+
     parts = text.split(maxsplit=1)
     if len(parts) < 2:
-        send_message(str(chat_id), "Эта ссылка должна открываться из приложения 24hokker.ru.")
-        return {"ok": True}
+        return reply("Эта ссылка должна открываться из приложения 24hokker.ru.")
 
     token = parts[1]
     try:
         payload = decode_token(token)
     except JWTError:
-        send_message(str(chat_id), "Ссылка устарела. Сгенерируйте новую в приложении.")
-        return {"ok": True}
+        return reply("Ссылка устарела. Сгенерируйте новую в приложении.")
 
     if payload.get("type") != "telegram_link":
-        send_message(str(chat_id), "Некорректная ссылка привязки.")
-        return {"ok": True}
+        return reply("Некорректная ссылка привязки.")
 
-    user = db.get(User, int(payload["sub"]))
+    try:
+        user_id = int(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        return reply("Некорректная ссылка привязки.")
+
+    user = db.get(User, user_id)
     if user is None:
-        send_message(str(chat_id), "Пользователь не найден.")
-        return {"ok": True}
+        return reply("Пользователь не найден.")
 
-    user.telegram_chat_id = str(chat_id)
-    db.commit()
+    # telegram_chat_id уникален. Без этой проверки повторная привязка чата к
+    # другому аккаунту падала бы с IntegrityError → 500, а Telegram повторял бы
+    # такой апдейт снова и снова.
+    already_taken = (
+        db.query(User)
+        .filter(User.telegram_chat_id == str(chat_id), User.id != user.id)
+        .first()
+    )
+    if already_taken is not None:
+        return reply(
+            "Этот Telegram уже привязан к другому аккаунту 24hokker.ru. "
+            "Если это ошибка — напишите в поддержку."
+        )
 
-    send_message(str(chat_id), "✅ Telegram успешно привязан к вашему аккаунту 24hokker.ru!")
-    return {"ok": True}
+    if user.telegram_chat_id != str(chat_id):
+        user.telegram_chat_id = str(chat_id)
+        db.commit()
+
+    return reply("✅ Telegram успешно привязан к вашему аккаунту 24hokker.ru!")

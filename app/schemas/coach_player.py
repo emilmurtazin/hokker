@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ParentLookupChildOut(BaseModel):
@@ -48,7 +48,8 @@ class CoachPlayerOut(BaseModel):
 
 
 class MessageIn(BaseModel):
-    text: str
+    # Лимит Telegram — 4096 символов на сообщение, с запасом на приписку.
+    text: str = Field(min_length=1, max_length=2000)
 
 
 class AttendanceHistoryEntryOut(BaseModel):
