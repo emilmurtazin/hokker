@@ -10,3 +10,4 @@ redis==5.0.8
 celery==5.4.0
 python-multipart==0.0.9
 httpx[socks]==0.27.2
+tzdata==2025.2

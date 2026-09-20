@@ -29,6 +29,7 @@ from app.schemas.training_session import (
     TrainingSessionFeedOut,
     TrainingSessionFeedListOut,
 )
+from app.services.formatting import session_info, session_title as _session_title
 from app.services.notifications import notify
 
 router = APIRouter(tags=["sessions"])
@@ -43,8 +44,35 @@ def _booked_count(db: Session, session_id: int) -> int:
     )
 
 
-def _session_title(s: TrainingSession) -> str:
-    return f"{s.type.value} {s.datetime_.strftime('%d.%m в %H:%M')}"
+# Статусы, при которых у родителя «живая» запись: об изменении/отмене тренировки
+# нужно сообщить всем им (rejected/cancelled/expired — уже не интересно).
+_ACTIVE_BOOKING_STATUSES = [
+    BookingStatus.confirmed,
+    BookingStatus.waiting,
+    BookingStatus.invited,
+    BookingStatus.pending,
+]
+
+
+def _affected_parents(db: Session, session_id: int) -> list[User]:
+    """
+    Родители, у которых есть активная запись на тренировку — по одному разу
+    (если двое детей одного родителя записаны на одну тренировку, сообщение одно).
+    Записи без player_id (ученик, добавленный тренером вручную, без аккаунта) пропускаем:
+    у них нет родителя в приложении, уведомлять некого.
+    """
+    rows = (
+        db.query(User)
+        .join(Player, Player.parent_id == User.id)
+        .join(Booking, Booking.player_id == Player.id)
+        .filter(
+            Booking.session_id == session_id,
+            Booking.status.in_(_ACTIVE_BOOKING_STATUSES),
+        )
+        .distinct()
+        .all()
+    )
+    return rows
 
 
 def _to_out(db: Session, s: TrainingSession) -> TrainingSessionOut:
@@ -161,6 +189,8 @@ def update_session(
     if session.coach_id != user.id:
         raise HTTPException(status_code=403, detail="Можно редактировать только свои тренировки")
 
+    old_info = session_info(session)
+
     session.type = SessionType(data.type)
     session.visibility = SessionVisibility(data.visibility)
     session.datetime_ = data.datetime
@@ -170,6 +200,15 @@ def update_session(
     session.price = data.price
     db.commit()
     db.refresh(session)
+
+    # Меняется только цена/лимит мест — родителям это не важно. А вот перенос
+    # времени, смена места, типа или длительности — важно: без уведомления
+    # люди приедут в старое время.
+    new_info = session_info(session)
+    if new_info != old_info:
+        for parent in _affected_parents(db, session.id):
+            notify("session_updated", parent, old_info=old_info, new_info=new_info)
+
     return _to_out(db, session)
 
 
@@ -186,30 +225,18 @@ def cancel_session(
         raise HTTPException(status_code=403, detail="Можно отменять только свои тренировки")
 
     # Уведомляем всех, у кого была активная запись или бронь листа ожидания —
-    # до удаления, пока ещё видим их bookings.
-    affected = (
-        db.query(Booking)
-        .filter(
-            Booking.session_id == session_id,
-            Booking.status.in_(
-                [
-                    BookingStatus.confirmed,
-                    BookingStatus.waiting,
-                    BookingStatus.invited,
-                    BookingStatus.pending,
-                ]
-            ),
-        )
-        .all()
-    )
+    # до удаления, пока ещё видим их bookings. Раньше здесь падало с 500,
+    # если на тренировке был ученик, добавленный тренером вручную (без player_id).
     title = _session_title(session)
-    for b in affected:
-        child = db.get(Player, b.player_id)
-        parent = db.get(User, child.parent_id)
-        notify("session_cancelled", parent, session_title=title)
+    parents = _affected_parents(db, session_id)
 
     db.delete(session)  # bookings удалятся каскадно (ondelete=CASCADE)
     db.commit()
+
+    # Уведомления — после успешного commit: если удаление не удалось,
+    # родители не получат ложное «тренировка отменена».
+    for parent in parents:
+        notify("session_cancelled", parent, session_title=title)
     return None
 
 

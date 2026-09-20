@@ -33,6 +33,26 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: str = "local"
 
+    # Часовой пояс, в котором пользователям показывается время в уведомлениях
+    # Telegram (в БД всё хранится в UTC). Список: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+    APP_TIMEZONE: str = "Europe/Moscow"
+
+    # Что открывает кнопка «Меню» слева от поля ввода в боте:
+    #   commands — список команд (Расписание, Заявки, Профиль …) — по умолчанию;
+    #   webapp   — сразу открывает приложение 24hokker.ru внутри Telegram.
+    TELEGRAM_MENU_BUTTON: str = "commands"
+
+    # Фоновые задачи: напоминания о тренировках и автоистечение приглашений
+    # из листа ожидания (раньше истечение проверялось только когда родитель
+    # сам нажимал «Подтвердить»).
+    SCHEDULER_ENABLED: bool = True
+    SCHEDULER_INTERVAL_SECONDS: int = 60
+    # За сколько часов до тренировки напоминать родителю (0 — не напоминать).
+    REMINDER_HOURS_BEFORE: int = 3
+    # «Тихие часы»: в это время (по APP_TIMEZONE) напоминания не отправляются.
+    QUIET_HOURS_START: int = 22
+    QUIET_HOURS_END: int = 8
+
     # SMS / OTP
     SMS_PROVIDER: str = "console"  # "console" для разработки, "smsru" для продакшена
     SMSRU_API_ID: str = ""

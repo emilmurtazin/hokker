@@ -32,8 +32,11 @@ class Booking(Base):
         Enum(BookingStatus, name="booking_status"), nullable=False, default=BookingStatus.pending
     )
     # момент, когда родителю ушло приглашение с листа ожидания —
-    # используется Celery-задачей для таймера 15 минут
+    # используется планировщиком (app/services/scheduler.py) для таймера 15 минут
     invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Когда родителю ушло напоминание о тренировке (см. app/services/scheduler.py).
+    # NULL — ещё не отправляли. Нужен, чтобы напоминание не дублировалось.
+    reminder_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     session: Mapped["TrainingSession"] = relationship(back_populates="bookings")

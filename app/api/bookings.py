@@ -14,6 +14,7 @@ from app.models.player import Player
 from app.models.training_session import TrainingSession
 from app.models.user import User
 from app.schemas.booking import BookingIn, BookingOut, ManualBookingIn
+from app.services.formatting import session_title as _session_title
 from app.services.notifications import notify
 
 router = APIRouter(tags=["bookings"])
@@ -34,10 +35,6 @@ def _get_owned_child(db: Session, parent: User, child_id: int) -> Player:
     if child is None or child.parent_id != parent.id:
         raise HTTPException(status_code=404, detail="Ребёнок не найден")
     return child
-
-
-def _session_title(session: TrainingSession) -> str:
-    return f"{session.type.value} {session.datetime_.strftime('%d.%m в %H:%M')}"
 
 
 def _age(birth_date) -> int:
@@ -66,11 +63,10 @@ def _to_booking_out(db: Session, booking: Booking) -> BookingOut:
 def _promote_next_waiting(db: Session, session_id: int) -> None:
     """
     Освободилось место — приглашаем первого из очереди (FIFO по created_at).
-    TODO(Celery): Celery Beat должен через WAITLIST_INVITE_TTL_MINUTES проверять
-    невостребованные invited -> expired и звать следующего. Пока это делается
-    синхронно при следующем обращении к /bookings/{id}/confirm-invite (см.
-    проверку истечения там) — рабочий, но не полностью автоматический вариант
-    до появления Celery.
+    Истечение приглашения (WAITLIST_INVITE_TTL_MINUTES): фоновый планировщик
+    (app/services/scheduler.py) раз в минуту переводит невостребованные
+    invited -> expired, уведомляет родителя и зовёт следующего из очереди.
+    Проверка в /bookings/{id}/confirm-invite остаётся как страховка.
     """
     next_in_line = (
         db.query(Booking)
@@ -180,10 +176,15 @@ def create_booking(
     db.refresh(booking)
 
     coach = db.get(User, session.coach_id)
+    event_kwargs = dict(
+        session_title=_session_title(session),
+        player_name=child.name,
+        path=f"/sessions/{session.id}",
+    )
     if new_status == BookingStatus.pending:
-        notify("new_booking_request", coach, session_title=_session_title(session))
+        notify("new_booking_request", coach, **event_kwargs)
     elif new_status == BookingStatus.confirmed:
-        notify("new_booking", coach, session_title=_session_title(session))
+        notify("new_booking", coach, **event_kwargs)
 
     return _to_booking_out(db, booking)
 
@@ -250,12 +251,25 @@ def cancel_booking(
         raise HTTPException(status_code=403, detail="Можно отменять только записи своего ребёнка")
 
     was_confirmed = booking.status == BookingStatus.confirmed
+    was_active = booking.status in (
+        BookingStatus.pending,
+        BookingStatus.confirmed,
+        BookingStatus.waiting,
+        BookingStatus.invited,
+    )
     booking.status = BookingStatus.cancelled
     db.commit()
 
     session = db.get(TrainingSession, booking.session_id)
     coach = db.get(User, session.coach_id)
-    notify("booking_cancelled", coach, session_title=_session_title(session))
+    if was_active:  # повторная отмена уже отменённой записи тренера не тревожит
+        notify(
+            "booking_cancelled",
+            coach,
+            session_title=_session_title(session),
+            player_name=child.name,
+            path=f"/sessions/{session.id}",
+        )
 
     if was_confirmed:
         _promote_next_waiting(db, booking.session_id)
@@ -292,6 +306,16 @@ def confirm_invite(
     booking.status = BookingStatus.confirmed
     db.commit()
     db.refresh(booking)
+
+    session = db.get(TrainingSession, booking.session_id)
+    coach = db.get(User, session.coach_id)
+    notify(
+        "new_booking",
+        coach,
+        session_title=_session_title(session),
+        player_name=child.name,
+        path=f"/sessions/{session.id}",
+    )
     return _to_booking_out(db, booking)
 
 

@@ -23,15 +23,12 @@ from app.schemas.rating import (
     RatingsBulkIn,
     SkillAverageOut,
 )
+from app.services.formatting import session_title as _session_title
 from app.services.notifications import notify
 
 router = APIRouter(tags=["ratings"])
 
 ALL_SKILLS = [s.value for s in SkillCategory]
-
-
-def _session_title(s: TrainingSession) -> str:
-    return f"{s.type.value} {s.datetime_.strftime('%d.%m в %H:%M')}"
 
 
 def _get_session_owned_by(db: Session, session_id: int, coach: User) -> TrainingSession:
@@ -85,8 +82,15 @@ def _notify_affected_parents(db: Session, session: TrainingSession, player_ids: 
     title = _session_title(session)
     for player_id in player_ids:
         player = db.get(Player, player_id)
+        if player is None:
+            continue
         parent = db.get(User, player.parent_id)
-        notify("rating_added", parent, session_title=title)
+        notify(
+            "rating_added",
+            parent,
+            session_title=title,
+            path=f"/children/{player.id}/progress",
+        )
 
 
 @router.post("/sessions/{session_id}/ratings/group", response_model=List[RatingOut])

@@ -168,6 +168,112 @@ def send_message_or_http_error(
         ) from None
 
 
+# ---------------------------------------------------------------------------
+# Кнопки, которые открывают приложение (24hokker.ru) прямо внутри Telegram
+# ---------------------------------------------------------------------------
+
+
+def app_base_url() -> str:
+    return (settings.APP_PUBLIC_URL or "https://24hokker.ru").rstrip("/")
+
+
+def app_url(path: str = "/") -> str:
+    """Полный адрес раздела приложения: app_url('/schedule') → https://24hokker.ru/schedule."""
+    if not path.startswith("/"):
+        path = "/" + path
+    return app_base_url() + path
+
+
+def _webapp_supported() -> bool:
+    # Telegram принимает Web App только по HTTPS; на локальной разработке
+    # (http://localhost) вместо этого используем обычную ссылку.
+    return app_base_url().startswith("https://")
+
+
+def open_app_button(text: str, path: str = "/") -> dict:
+    """Inline-кнопка: открывает раздел приложения внутри Telegram (Mini App)."""
+    if _webapp_supported():
+        return {"text": text, "web_app": {"url": app_url(path)}}
+    return {"text": text, "url": app_url(path)}
+
+
+def open_app_markup(text: str, path: str = "/") -> dict:
+    return {"inline_keyboard": [[open_app_button(text, path)]]}
+
+
+def reply_keyboard(rows: list[list[tuple[str, str]]]) -> dict | None:
+    """
+    Постоянная клавиатура под полем ввода. rows — [[(подпись, путь), ...], ...].
+    Каждая кнопка открывает нужный раздел приложения одним нажатием (KeyboardButton.web_app).
+    Reply-кнопки умеют только Web App, поэтому без HTTPS клавиатуру не показываем.
+    """
+    if not _webapp_supported():
+        return None
+    return {
+        "keyboard": [
+            [{"text": label, "web_app": {"url": app_url(path)}} for label, path in row]
+            for row in rows
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True,
+        "input_field_placeholder": "Выберите раздел или нажмите «Меню»",
+    }
+
+
+REMOVE_KEYBOARD = {"remove_keyboard": True}
+
+
+# ---------------------------------------------------------------------------
+# Профиль бота: меню команд, описание, кнопка «Меню»
+# ---------------------------------------------------------------------------
+
+# Одно меню на все роли: что именно покажет команда, бот решает по роли
+# пользователя (см. app/services/telegram_bot.py).
+BOT_COMMANDS = [
+    {"command": "menu", "description": "Главное меню"},
+    {"command": "schedule", "description": "Расписание и тренировки"},
+    {"command": "requests", "description": "Заявки и приглашения"},
+    {"command": "exercises", "description": "Каталог упражнений"},
+    {"command": "profile", "description": "Профиль и настройки"},
+    {"command": "help", "description": "Помощь"},
+]
+
+BOT_DESCRIPTION = (
+    "Хоккер — платформа для тренеров, родителей и арен.\n"
+    "Здесь приходят уведомления о записях, тренировках и заявках, "
+    "а кнопки меню открывают нужные разделы приложения."
+)
+BOT_SHORT_DESCRIPTION = "Уведомления и быстрый доступ к 24hokker.ru"
+
+
+def setup_bot_profile() -> None:
+    """
+    Идемпотентная настройка бота: команды, описание, кнопка «Меню».
+    Вызывается при старте приложения (в фоновом потоке). Каждый шаг независим:
+    сбой одного (например, недоступен прокси) не мешает остальным и не роняет сервис.
+    """
+    if not settings.TELEGRAM_BOT_TOKEN:
+        return
+
+    if settings.TELEGRAM_MENU_BUTTON == "webapp" and _webapp_supported():
+        menu_button = {"type": "web_app", "text": "Хоккер", "web_app": {"url": app_url("/")}}
+    else:
+        menu_button = {"type": "commands"}
+
+    steps = [
+        ("setMyCommands", {"commands": BOT_COMMANDS}),
+        ("setMyDescription", {"description": BOT_DESCRIPTION}),
+        ("setMyShortDescription", {"short_description": BOT_SHORT_DESCRIPTION}),
+        ("setChatMenuButton", {"menu_button": menu_button}),
+    ]
+    for method, payload in steps:
+        try:
+            _call(method, payload)
+        except TelegramError as e:
+            print(f"[TELEGRAM SETUP] {e}")
+    print("[TELEGRAM SETUP] профиль бота обновлён (команды, описание, меню)")
+
+
 def set_webhook(webhook_url: str, secret_token: str | None = None) -> dict:
     """
     Утилита для одноразовой настройки — вызывается вручную, не из приложения.

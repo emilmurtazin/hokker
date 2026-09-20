@@ -1,3 +1,7 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -17,11 +21,36 @@ from app.api.ratings import router as ratings_router
 from app.api.arenas import router as arenas_router
 from app.api.exercises import router as exercises_router
 from app.api.telegram import router as telegram_router
+from app.services.scheduler import scheduler_loop
+from app.services.telegram import setup_bot_profile
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """
+    При старте: (1) обновляем профиль бота — команды меню, описание, кнопку «Меню»
+    (идемпотентно, в фоне: недоступный Telegram/прокси не задерживает запуск);
+    (2) запускаем фоновый планировщик — напоминания и истечение приглашений.
+    """
+    tasks: list[asyncio.Task] = []
+    if settings.TELEGRAM_BOT_TOKEN:
+        tasks.append(asyncio.create_task(asyncio.to_thread(setup_bot_profile)))
+    if settings.SCHEDULER_ENABLED:
+        tasks.append(asyncio.create_task(scheduler_loop()))
+    try:
+        yield
+    finally:
+        for task in tasks:
+            task.cancel()
+
 
 app = FastAPI(
     title="24hokker.ru API",
     description="Платформа для тренеров, родителей и арен",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

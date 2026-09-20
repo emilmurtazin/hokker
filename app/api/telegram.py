@@ -10,7 +10,8 @@ from app.core.database import get_db
 from app.models.telegram_link_token import TelegramLinkToken
 from app.models.user import User
 from app.schemas.telegram import TelegramLinkOut
-from app.services.telegram import send_message
+from app.services.telegram import REMOVE_KEYBOARD, esc, send_message
+from app.services.telegram_bot import COMMANDS, main_markup, parse_command, role_of
 
 router = APIRouter(tags=["telegram"])
 
@@ -49,6 +50,12 @@ async def telegram_webhook(
     """
     Telegram присылает сюда апдейты. Секрет проверяется, если задан
     TELEGRAM_WEBHOOK_SECRET. Токен привязки ищем в БД (короткий, одноразовый).
+
+    Что обрабатываем (только личные чаты):
+      /start <токен>  — привязка Telegram к аккаунту
+      /start          — приветствие; для привязанного аккаунта — главное меню
+      /menu /schedule /requests /exercises /profile /help /whoami — см. telegram_bot.py
+      /unlink         — отвязать Telegram (уведомления прекращаются)
     """
     if settings.TELEGRAM_WEBHOOK_SECRET:
         received = (x_telegram_bot_api_secret_token or "").encode()
@@ -61,61 +68,63 @@ async def telegram_webhook(
     if not message:
         return {"ok": True}
 
-    text = message.get("text") or ""
     chat = message.get("chat") or {}
     chat_id = chat.get("id")
-
-    if chat_id is None:
-        return {"ok": True}
-
-    # /whoami — показать, к какому аккаунту привязан этот Telegram
-    if text.strip() == "/whoami":
-        user = (
-            db.query(User)
-            .filter(User.telegram_chat_id == str(chat_id))
-            .first()
-        )
-        if user is None:
-            return reply(
-                "Этот Telegram не привязан ни к одному аккаунту 24hokker.ru.\n"
-                "Откройте приложение → Профиль → «Привязать Telegram»."
-            )
-        return reply(
-            f"👤 Аккаунт: <b>{user.name}</b>\n"
-            f"📞 Телефон: {user.phone}\n"
-            f"🎭 Роль: {user.role.value}\n"
-            f"🆔 User ID: {user.id}\n"
-            f"💬 Chat ID: {chat_id}"
-        )
-
-    if not text.startswith("/start"):
-        return {"ok": True}
-    if chat.get("type") != "private":
+    # Бот работает только в личке: кнопки Web App и уведомления в группах не нужны.
+    if chat_id is None or chat.get("type") != "private":
         return {"ok": True}
 
     def reply(reply_text: str, reply_markup: dict | None = None) -> dict:
         background.add_task(send_message, str(chat_id), reply_text, reply_markup)
         return {"ok": True}
 
-    def reply_welcome() -> dict:
-        app_url = settings.APP_PUBLIC_URL or "https://24hokker.ru"
-        text_out = (
-            "👋 Привет! Я бот Хоккер.\n\n"
-            "Чтобы привязать Telegram к вашему аккаунту:\n"
-            "1. Войдите в приложение 24hokker.ru\n"
-            "2. Перейдите в Профиль → «Привязать Telegram»\n"
-            "3. Нажмите кнопку — откроется бот прямо в Telegram"
+    command, arg = parse_command(message.get("text") or "")
+    user = db.query(User).filter(User.telegram_chat_id == str(chat_id)).first()
+
+    # --- /start <токен> — привязка аккаунта ---
+    if command == "start" and arg:
+        return _link_account(db, str(chat_id), arg, reply)
+
+    # --- отвязка ---
+    if command == "unlink":
+        if user is None:
+            return reply("Этот Telegram и так не привязан ни к одному аккаунту.")
+        user.telegram_chat_id = None
+        db.commit()
+        return reply(
+            "🔕 Telegram отвязан — уведомления приходить не будут.\n"
+            "Вернуть: приложение → Профиль → «Привязать Telegram».",
+            REMOVE_KEYBOARD,
         )
-        markup = {
-            "inline_keyboard": [[{"text": "🔗 Перейти на сайт", "url": app_url}]]
-        }
-        return reply(text_out, markup)
 
-    parts = text.split(maxsplit=1)
-    if len(parts) < 2:
-        return reply_welcome()
+    # --- Не привязан: всё, кроме /start, ведёт на инструкцию по привязке ---
+    if user is None:
+        return reply_not_linked(reply)
 
-    token_value = parts[1]
+    # --- Привязан: /start — то же, что /menu; остальное — по таблице команд ---
+    handler = COMMANDS["menu"] if command == "start" else COMMANDS.get(command or "")
+    if handler is None:
+        # неизвестная команда или обычный текст
+        return reply("Не понял 🤔 Воспользуйтесь кнопками меню или командой /help.", main_markup(role_of(user)))
+
+    text_out, markup = handler(db, user)
+    return reply(text_out, markup)
+
+
+def reply_not_linked(reply) -> dict:
+    app_url = settings.APP_PUBLIC_URL or "https://24hokker.ru"
+    text_out = (
+        "👋 Привет! Я бот Хоккер.\n\n"
+        "Чтобы получать уведомления и пользоваться меню, привяжите Telegram к аккаунту:\n"
+        "1. Войдите в приложение 24hokker.ru\n"
+        "2. Перейдите в Профиль → «Привязать Telegram»\n"
+        "3. Нажмите кнопку — откроется этот бот"
+    )
+    markup = {"inline_keyboard": [[{"text": "🔗 Перейти на сайт", "url": app_url}]]}
+    return reply(text_out, markup)
+
+
+def _link_account(db: Session, chat_id: str, token_value: str, reply) -> dict:
     link = (
         db.query(TelegramLinkToken)
         .filter(TelegramLinkToken.token == token_value, TelegramLinkToken.used.is_(False))
@@ -130,7 +139,7 @@ async def telegram_webhook(
 
     already_taken = (
         db.query(User)
-        .filter(User.telegram_chat_id == str(chat_id), User.id != user.id)
+        .filter(User.telegram_chat_id == chat_id, User.id != user.id)
         .first()
     )
     if already_taken is not None:
@@ -139,11 +148,16 @@ async def telegram_webhook(
             "Если это ошибка — напишите в поддержку."
         )
 
-    if user.telegram_chat_id != str(chat_id):
-        user.telegram_chat_id = str(chat_id)
+    if user.telegram_chat_id != chat_id:
+        user.telegram_chat_id = chat_id
 
     link.used = True
     link.used_at = datetime.now(timezone.utc)
     db.commit()
 
-    return reply("✅ Telegram успешно привязан к вашему аккаунту 24hokker.ru!")
+    return reply(
+        f"✅ Готово, {esc(user.name)}! Telegram привязан к аккаунту 24hokker.ru.\n\n"
+        "Сюда будут приходить уведомления о записях, заявках и тренировках. "
+        "А кнопки ниже открывают нужные разделы приложения.",
+        main_markup(role_of(user)),
+    )

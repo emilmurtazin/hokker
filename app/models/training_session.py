@@ -39,4 +39,9 @@ class TrainingSession(Base):
 
     coach: Mapped["User"] = relationship()
     arena: Mapped["Arena"] = relationship()
-    bookings: Mapped[list["Booking"]] = relationship(back_populates="session")
+    # cascade + passive_deletes: при удалении тренировки записи удаляет БД
+    # (ON DELETE CASCADE). Без этого SQLAlchemy пытался обнулить bookings.session_id
+    # (NOT NULL) и отмена любой тренировки с записями падала с HTTP 500.
+    bookings: Mapped[list["Booking"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan", passive_deletes=True
+    )
