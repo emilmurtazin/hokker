@@ -1,4 +1,28 @@
+from urllib.parse import urlsplit
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Адрес фронтенда по умолчанию (используется ботом, если APP_PUBLIC_URL не задан).
+DEFAULT_PUBLIC_URL = "https://24hokker.ru"
+
+
+def _origin_variants(url: str) -> list[str]:
+    """
+    'https://24hokker.ru/path' -> ['https://24hokker.ru', 'https://www.24hokker.ru'].
+    Для localhost и IP-адресов двойник с www не добавляется.
+    """
+    parts = urlsplit((url or "").strip())
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return []
+    host = parts.hostname.lower()
+    port = f":{parts.port}" if parts.port else ""
+    variants = [f"{parts.scheme}://{host}{port}"]
+    is_ip = all(chunk.isdigit() for chunk in host.split("."))
+    if host != "localhost" and "." in host and not is_ip:
+        twin = host[4:] if host.startswith("www.") else f"www.{host}"
+        variants.append(f"{parts.scheme}://{twin}{port}")
+    return variants
 
 
 class Settings(BaseSettings):
@@ -29,7 +53,21 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> list[str]:
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        """
+        Домены, которым браузер разрешено обращаться к API:
+          * всё из CORS_ORIGINS (без замыкающего «/»: браузер шлёт Origin без него,
+            и запись «https://site.ru/» никогда не совпала бы);
+          * адрес из APP_PUBLIC_URL и его двойник с «www.» / без него. Именно на этот
+            адрес бот отправляет пользователей («Перейти на сайт», кнопки меню), поэтому
+            он обязан быть разрешён. Иначе страница открывается, а любой запрос к API
+            (например, «отправить SMS») браузер блокирует, и пользователь видит только
+            «Не получилось отправить код».
+        """
+        origins = [o.strip().rstrip("/") for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        for extra in _origin_variants(self.APP_PUBLIC_URL or DEFAULT_PUBLIC_URL):
+            if extra not in origins:
+                origins.append(extra)
+        return origins
 
     ENVIRONMENT: str = "local"
 

@@ -31,9 +31,9 @@ from app.schemas.auth import (
     RefreshIn,
     AccessTokenOut,
     LogoutIn,
-    UserOut,
 )
 from app.services.sms import get_sms_provider
+from app.services.user_out import build_user_out
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -207,5 +207,6 @@ def _issue_token_pair(user: User, db: Session) -> TokenPairOut:
     return TokenPairOut(
         access_token=access_token,
         refresh_token=refresh_token,
-        user=UserOut.model_validate(user),
+        # тот же состав, что у GET /users/me (включая ссылку привязки Telegram)
+        user=build_user_out(user, db),
     )

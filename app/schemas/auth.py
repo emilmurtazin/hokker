@@ -43,6 +43,9 @@ class UserOut(BaseModel):
     city: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     telegram_deep_link: Optional[str] = None
+    # Имя бота без «@» — чтобы в профиле показать его адрес (@имя), и пользователь
+    # мог найти бота сам, если кнопка со ссылкой не открылась.
+    telegram_bot_username: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

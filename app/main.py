@@ -34,6 +34,10 @@ async def lifespan(_: FastAPI):
     (идемпотентно, в фоне: недоступный Telegram/прокси не задерживает запуск);
     (2) запускаем фоновый планировщик — напоминания и истечение приглашений.
     """
+    # Если браузер пишет «Не получилось…» при запросах к API — первым делом смотрят сюда:
+    # адрес сайта в адресной строке должен быть в этом списке (CORS).
+    logger.warning("[CORS] разрешённые адреса фронтенда: %s", ", ".join(settings.cors_origins_list))
+
     tasks: list[asyncio.Task] = []
     if settings.TELEGRAM_BOT_TOKEN:
         tasks.append(asyncio.create_task(asyncio.to_thread(setup_bot_profile)))

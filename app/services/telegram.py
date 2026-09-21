@@ -27,7 +27,7 @@ from typing import NoReturn
 import httpx
 from fastapi import HTTPException
 
-from app.core.config import settings
+from app.core.config import DEFAULT_PUBLIC_URL, settings
 
 # Лимит Telegram на длину одного сообщения (после разбора HTML-разметки).
 MAX_TEXT_LEN = 4096
@@ -211,7 +211,7 @@ def raise_http_error(e: TelegramError, chat_id: str) -> NoReturn:
 
 
 def app_base_url() -> str:
-    return (settings.APP_PUBLIC_URL or "https://24hokker.ru").rstrip("/")
+    return (settings.APP_PUBLIC_URL or DEFAULT_PUBLIC_URL).rstrip("/")
 
 
 def app_url(path: str = "/") -> str:
