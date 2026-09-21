@@ -22,6 +22,7 @@ TELEGRAM_PROXY_URL, все запросы к Bot API пойдут через н�
 """
 
 import html
+from typing import NoReturn
 
 import httpx
 from fastapi import HTTPException
@@ -30,6 +31,8 @@ from app.core.config import settings
 
 # Лимит Telegram на длину одного сообщения (после разбора HTML-разметки).
 MAX_TEXT_LEN = 4096
+# Лимит на подпись к фото — в четыре раза меньше, чем у обычного сообщения.
+MAX_CAPTION_LEN = 1024
 
 
 class TelegramError(Exception):
@@ -50,14 +53,14 @@ def esc(value) -> str:
     return html.escape(str(value), quote=False)
 
 
-def _fit(text: str) -> str:
+def _fit(text: str, max_len: int = MAX_TEXT_LEN) -> str:
     """
     Укладывает текст в лимит Telegram. Режем по пробелу/переводу строки, а не
     посреди слова: так не разрезается HTML-сущность вида &amp;.
     """
-    if len(text) <= MAX_TEXT_LEN:
+    if len(text) <= max_len:
         return text
-    limit = MAX_TEXT_LEN - 2
+    limit = max_len - 2
     cut = max(text.rfind("\n", 0, limit), text.rfind(" ", 0, limit))
     if cut < limit // 2:
         cut = limit
@@ -124,6 +127,35 @@ def send_message_strict(
     _call("sendMessage", payload)
 
 
+def send_photo_strict(
+    chat_id: str,
+    photo_url: str,
+    caption: str,
+    reply_markup: dict | None = None,
+    parse_mode: str | None = "HTML",
+) -> None:
+    """
+    Отправляет картинку по публичному HTTPS-адресу (Telegram сам скачивает её)
+    с подписью (до 1024 символов) и необязательной клавиатурой. Бросает TelegramError.
+    Без TELEGRAM_BOT_TOKEN (локальная разработка) печатает в консоль.
+    """
+    if not settings.TELEGRAM_BOT_TOKEN:
+        print(f"[DEV TELEGRAM PHOTO] -> chat_id={chat_id}: {photo_url}\n{caption}")
+        return
+
+    payload: dict = {
+        "chat_id": chat_id,
+        "photo": photo_url,
+        "caption": _fit(caption, MAX_CAPTION_LEN),
+    }
+    if parse_mode is not None:
+        payload["parse_mode"] = parse_mode
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+
+    _call("sendPhoto", payload)
+
+
 def send_message(
     chat_id: str,
     text: str,
@@ -156,16 +188,21 @@ def send_message_or_http_error(
     try:
         send_message_strict(chat_id, text, reply_markup=reply_markup, parse_mode=parse_mode)
     except TelegramError as e:
-        print(f"[TELEGRAM ERROR] chat_id={chat_id}: {e}")
-        if e.blocked:
-            raise HTTPException(
-                status_code=409,
-                detail="Родитель остановил бота в Telegram — пусть заново нажмёт «Привязать Telegram» в профиле",
-            ) from None
+        raise_http_error(e, chat_id)
+
+
+def raise_http_error(e: TelegramError, chat_id: str) -> NoReturn:
+    """Превращает сбой Telegram в понятную HTTP-ошибку (её покажет фронтенд)."""
+    print(f"[TELEGRAM ERROR] chat_id={chat_id}: {e}")
+    if e.blocked:
         raise HTTPException(
-            status_code=502,
-            detail="Не удалось отправить сообщение в Telegram. Попробуйте чуть позже.",
+            status_code=409,
+            detail="Родитель остановил бота в Telegram — пусть заново нажмёт «Привязать Telegram» в профиле",
         ) from None
+    raise HTTPException(
+        status_code=502,
+        detail="Не удалось отправить сообщение в Telegram. Попробуйте чуть позже.",
+    ) from None
 
 
 # ---------------------------------------------------------------------------

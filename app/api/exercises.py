@@ -17,7 +17,8 @@ from app.models.exercise import Exercise
 from app.models.player import Player
 from app.models.user import User
 from app.schemas.exercise import ExerciseIn, ExerciseListOut, ExerciseOut, SendExerciseIn
-from app.services.telegram import esc, send_message_or_http_error
+from app.services.exercise_message import send_exercise_to_chat
+from app.services.telegram import TelegramError, raise_http_error
 
 router = APIRouter(tags=["exercises"])
 
@@ -123,19 +124,11 @@ def send_exercise(
     if not parent.telegram_chat_id:
         raise HTTPException(status_code=409, detail="У родителя не привязан Telegram")
 
-    text = f"🏒 Тренер {esc(user.name)} рекомендует отработать дома:\n\n<b>{esc(exercise.title)}</b>"
-    if exercise.video_url:
-        text += f"\n{esc(exercise.video_url)}"
-    if exercise.description:
-        text += f"\n\n{esc(exercise.description)}"
-    if exercise.steps:
-        text += "\n\nКак выполнять:\n" + "\n".join(
-            f"{i+1}. {esc(s)}" for i, s in enumerate(exercise.steps)
-        )
-    if data.note:
-        text += f"\n\nКомментарий тренера: {esc(data.note)}"
-
-    send_message_or_http_error(parent.telegram_chat_id, text)
+    # Картинка карточки (если есть) + название с кодом + кнопка «Открыть упражнение».
+    try:
+        send_exercise_to_chat(parent.telegram_chat_id, exercise, user.name, data.note)
+    except TelegramError as e:
+        raise_http_error(e, parent.telegram_chat_id)
     return None
 
 
