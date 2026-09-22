@@ -3,6 +3,7 @@ from app.models.telegram_link_token import TelegramLinkToken
 from app.models.coach import Coach
 from app.models.player import Player
 from app.models.coach_player import CoachPlayer
+from app.models.client_group import ClientGroup, ClientGroupMember, SessionGroup
 from app.models.arena import Arena
 from app.models.ice_slot import IceSlot
 from app.models.slot_request import SlotRequest
@@ -20,6 +21,9 @@ __all__ = [
     "Coach",
     "Player",
     "CoachPlayer",
+    "ClientGroup",
+    "ClientGroupMember",
+    "SessionGroup",
     "Arena",
     "IceSlot",
     "SlotRequest",

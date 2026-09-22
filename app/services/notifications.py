@@ -77,6 +77,9 @@ EVENTS: dict[str, Event] = {
         "Открыть расписание",
         "/schedule",
     ),
+    "booked_by_coach": Event(
+        "📌 Тренер записал {player_name} на «{session_title}».", "Открыть расписание", "/schedule"
+    ),
     "session_cancelled": Event(
         "🚫 Тренировка «{session_title}» отменена тренером.", "Открыть расписание", "/schedule"
     ),

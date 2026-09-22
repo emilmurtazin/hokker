@@ -7,9 +7,17 @@ SESSION_TYPES = Literal["ice", "off_ice", "shooting", "theory", "game", "goalie"
 SESSION_VISIBILITY = Literal["open", "closed"]
 
 
+class GroupRefOut(BaseModel):
+    id: int
+    name: str
+
+
 class TrainingSessionIn(BaseModel):
     type: SESSION_TYPES
     visibility: SESSION_VISIBILITY
+    # Для закрытой тренировки — каким группам клиентов она доступна. Пусто — всем ученикам
+    # тренера. При изменении: None — не трогать, [] — снять ограничение. У открытой не действует.
+    group_ids: Optional[List[int]] = None
     datetime: datetime
     duration_minutes: int = Field(default=60, ge=15, le=480)
     arena_name: Optional[str] = Field(default=None, max_length=255)
@@ -41,6 +49,9 @@ class TrainingSessionOut(BaseModel):
     max_players: int
     price: Optional[float] = None
     booked_count: int = 0
+    # Названия групп видит только сам тренер — это его внутренние пометки; в ответах
+    # для родителей список всегда пустой.
+    groups: List[GroupRefOut] = []
 
     model_config = {"from_attributes": True}
 

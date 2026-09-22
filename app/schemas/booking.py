@@ -12,6 +12,18 @@ class ManualBookingIn(BaseModel):
     player_name: str = Field(..., min_length=1, max_length=255)
 
 
+class AddParticipantsIn(BaseModel):
+    """Тренер записывает на тренировку учеников из своей базы: по одному и/или целыми группами."""
+
+    coach_player_ids: list[int] = []
+    group_ids: list[int] = []
+
+
+class SkippedParticipantOut(BaseModel):
+    player_name: str
+    reason: str
+
+
 class BookingOut(BaseModel):
     id: int
     session_id: int
@@ -26,3 +38,8 @@ class BookingOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AddParticipantsOut(BaseModel):
+    added: list[BookingOut]
+    skipped: list[SkippedParticipantOut]

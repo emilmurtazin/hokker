@@ -2,18 +2,17 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_role
+from app.api.deps import get_current_user, get_optional_user, require_role
 from app.core.database import get_db
 from app.models.booking import Booking
+from app.models.client_group import SessionGroup
 from app.models.arena import Arena
 from app.models.coach import Coach
-from app.models.coach_player import CoachPlayer
 from app.models.enums import (
     BookingStatus,
-    CoachPlayerStatus,
     ExerciseAgeGroup,
     SessionType,
     SessionVisibility,
@@ -22,12 +21,20 @@ from app.models.enums import (
 from app.models.player import Player
 from app.models.training_session import TrainingSession
 from app.models.user import User
+from app.schemas.client_group import SessionGroupsIn
 from app.schemas.training_session import (
+    GroupRefOut,
     TrainingSessionIn,
     TrainingSessionOut,
     TrainingSessionListOut,
     TrainingSessionFeedOut,
     TrainingSessionFeedListOut,
+)
+from app.services.access import (
+    closed_session_open_to_parent,
+    parent_can_view_session,
+    session_groups,
+    validated_group_ids,
 )
 from app.services.formatting import session_info, session_title as _session_title
 from app.services.notifications import notify
@@ -75,7 +82,14 @@ def _affected_parents(db: Session, session_id: int) -> list[User]:
     return rows
 
 
-def _to_out(db: Session, s: TrainingSession) -> TrainingSessionOut:
+def _set_session_groups(db: Session, session: TrainingSession, group_ids: list[int]) -> None:
+    """Заменяет список групп тренировки. Для открытой тренировки группы не хранятся."""
+    db.query(SessionGroup).filter(SessionGroup.session_id == session.id).delete()
+    if session.visibility == SessionVisibility.closed:
+        db.add_all(SessionGroup(session_id=session.id, group_id=g) for g in group_ids)
+
+
+def _to_out(db: Session, s: TrainingSession, with_groups: bool = False) -> TrainingSessionOut:
     arena = db.get(Arena, s.arena_id) if s.arena_id else None
     coach = db.get(User, s.coach_id)
     return TrainingSessionOut(
@@ -92,6 +106,7 @@ def _to_out(db: Session, s: TrainingSession) -> TrainingSessionOut:
         max_players=s.max_players,
         price=float(s.price) if s.price is not None else None,
         booked_count=_booked_count(db, s.id),
+        groups=[GroupRefOut(id=g.id, name=g.name) for g in session_groups(db, s.id)] if with_groups else [],
     )
 
 
@@ -109,21 +124,34 @@ def sessions_feed(
     date_to: Optional[str] = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     """
-    Общая лента открытых будущих тренировок по всем тренерам города —
-    альтернатива поиску через конкретный профиль тренера. Поддерживает те
-    же фильтры категорий, что и каталог тренеров (специализация, возраст).
+    Общая лента будущих тренировок — альтернатива поиску через конкретный профиль
+    тренера. Поддерживает те же фильтры категорий, что и каталог тренеров
+    (специализация, возраст).
+
+    Всем видны открытые тренировки тренеров города. Авторизованному родителю к ним
+    добавляются закрытые тренировки, доступные его детям (ученик тренера и, если у
+    тренировки выбраны группы, состоит в одной из них). Город для закрытых не
+    ограничивает: это тренировки «своего» тренера, где бы он ни жил.
     """
+    open_clause = and_(
+        TrainingSession.visibility == SessionVisibility.open,
+        User.city == city,
+        Coach.visible_in_search.is_(True),
+    )
+    if user is not None and user.role.value == "parent":
+        visible_clause = or_(open_clause, closed_session_open_to_parent(user.id))
+    else:
+        visible_clause = open_clause
     query = (
         db.query(TrainingSession, User.name)
         .join(User, User.id == TrainingSession.coach_id)
         .join(Coach, Coach.id == TrainingSession.coach_id)
         .filter(
-            User.city == city,
-            Coach.visible_in_search.is_(True),
-            TrainingSession.visibility == SessionVisibility.open,
+            visible_clause,
             TrainingSession.datetime_ >= datetime.now(timezone.utc),
         )
     )
@@ -151,6 +179,7 @@ def create_session(
     user: User = Depends(require_role("coach")),
     db: Session = Depends(get_db),
 ):
+    group_ids = validated_group_ids(db, user.id, data.group_ids)
     session = TrainingSession(
         coach_id=user.id,
         type=SessionType(data.type),
@@ -163,17 +192,25 @@ def create_session(
         price=data.price,
     )
     db.add(session)
+    db.flush()  # нужен session.id для связей с группами
+    _set_session_groups(db, session, group_ids)
     db.commit()
     db.refresh(session)
-    return _to_out(db, session)
+    return _to_out(db, session, with_groups=True)
 
 
 @router.get("/sessions/{session_id}", response_model=TrainingSessionOut)
-def get_session(session_id: int, db: Session = Depends(get_db)):
+def get_session(
+    session_id: int,
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
     session = db.get(TrainingSession, session_id)
-    if session is None:
+    # Закрытую тренировку видят только тренер, допущенные родители и записанные на неё.
+    # Всем остальным — «не найдена», а не «нет доступа»: не подтверждаем, что она существует.
+    if session is None or not parent_can_view_session(db, session, user):
         raise HTTPException(status_code=404, detail="Тренировка не найдена")
-    return _to_out(db, session)
+    return _to_out(db, session, with_groups=user is not None and user.id == session.coach_id)
 
 
 @router.patch("/sessions/{session_id}", response_model=TrainingSessionOut)
@@ -190,6 +227,7 @@ def update_session(
         raise HTTPException(status_code=403, detail="Можно редактировать только свои тренировки")
 
     old_info = session_info(session)
+    group_ids = validated_group_ids(db, user.id, data.group_ids) if data.group_ids is not None else None
 
     session.type = SessionType(data.type)
     session.visibility = SessionVisibility(data.visibility)
@@ -198,6 +236,8 @@ def update_session(
     session.arena_name = data.arena_name
     session.max_players = data.max_players
     session.price = data.price
+    if group_ids is not None or session.visibility == SessionVisibility.open:
+        _set_session_groups(db, session, group_ids or [])  # открытая: группы снимаются
     db.commit()
     db.refresh(session)
 
@@ -209,7 +249,27 @@ def update_session(
         for parent in _affected_parents(db, session.id):
             notify("session_updated", parent, old_info=old_info, new_info=new_info)
 
-    return _to_out(db, session)
+    return _to_out(db, session, with_groups=True)
+
+
+@router.put("/sessions/{session_id}/groups", response_model=TrainingSessionOut)
+def set_session_groups(
+    session_id: int,
+    data: SessionGroupsIn,
+    user: User = Depends(require_role("coach")),
+    db: Session = Depends(get_db),
+):
+    """Меняет, каким группам доступна закрытая тренировка (пустой список — всем ученикам)."""
+    session = db.get(TrainingSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Тренировка не найдена")
+    if session.coach_id != user.id:
+        raise HTTPException(status_code=403, detail="Можно редактировать только свои тренировки")
+    if session.visibility != SessionVisibility.closed:
+        raise HTTPException(status_code=409, detail="Группы задаются только для закрытых тренировок")
+    _set_session_groups(db, session, validated_group_ids(db, user.id, data.group_ids))
+    db.commit()
+    return _to_out(db, session, with_groups=True)
 
 
 @router.delete("/sessions/{session_id}", status_code=204)
@@ -256,7 +316,7 @@ def my_sessions(
     total = query.count()
     rows = query.order_by(TrainingSession.datetime_.asc()).offset(offset).limit(limit).all()
     return TrainingSessionListOut(
-        items=[_to_out(db, s) for s in rows], total=total, limit=limit, offset=offset
+        items=[_to_out(db, s, with_groups=True) for s in rows], total=total, limit=limit, offset=offset
     )
 
 
@@ -301,27 +361,18 @@ def coach_sessions_for_parent(
     db: Session = Depends(get_db),
 ):
     """
-    То же самое, но для авторизованного родителя: если у него есть ребёнок
-    с активной связью с этим тренером — видны и closed-тренировки тоже.
+    То же самое, но для авторизованного родителя: помимо открытых видны закрытые
+    тренировки, доступные его детям (ученик тренера и, если у тренировки выбраны
+    группы, состоит в одной из них).
     """
-    has_active_child = (
-        db.query(CoachPlayer)
-        .join(Player, Player.id == CoachPlayer.player_id)
-        .filter(
-            CoachPlayer.coach_id == coach_id,
-            CoachPlayer.status == CoachPlayerStatus.active,
-            Player.parent_id == user.id,
-        )
-        .first()
-        is not None
-    )
-
     query = db.query(TrainingSession).filter(
         TrainingSession.coach_id == coach_id,
         TrainingSession.datetime_ >= datetime.now(timezone.utc),
+        or_(
+            TrainingSession.visibility == SessionVisibility.open,
+            closed_session_open_to_parent(user.id),
+        ),
     )
-    if not has_active_child:
-        query = query.filter(TrainingSession.visibility == SessionVisibility.open)
 
     total = query.count()
     rows = query.order_by(TrainingSession.datetime_.asc()).offset(offset).limit(limit).all()

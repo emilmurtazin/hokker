@@ -45,6 +45,8 @@ class CoachPlayerOut(BaseModel):
     attendance: AttendanceSummary
     sessions_count: int
     created_at: datetime
+    # В каких группах тренера состоит ученик (id из GET /coaches/me/groups)
+    group_ids: List[int] = []
 
 
 class MessageIn(BaseModel):

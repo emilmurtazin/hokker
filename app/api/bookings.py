@@ -8,12 +8,21 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_role
 from app.core.database import get_db
 from app.models.booking import Booking
+from app.models.client_group import ClientGroupMember
 from app.models.coach_player import CoachPlayer
 from app.models.enums import BookingStatus, CoachPlayerStatus
 from app.models.player import Player
 from app.models.training_session import TrainingSession
 from app.models.user import User
-from app.schemas.booking import BookingIn, BookingOut, ManualBookingIn
+from app.schemas.booking import (
+    AddParticipantsIn,
+    AddParticipantsOut,
+    BookingIn,
+    BookingOut,
+    ManualBookingIn,
+    SkippedParticipantOut,
+)
+from app.services.access import child_access, validated_group_ids
 from app.services.formatting import session_title as _session_title
 from app.services.notifications import notify
 
@@ -126,8 +135,8 @@ def create_booking(
 
     child = _get_owned_child(db, user, data.child_id)
 
-    # Правило видимости: на closed-тренировку можно записаться только если
-    # ребёнок уже активен в базе тренера.
+    # Правило видимости: на closed-тренировку можно записаться только если ребёнок
+    # активен в базе тренера и (если у тренировки выбраны группы) состоит в одной из них.
     coach_player = (
         db.query(CoachPlayer)
         .filter(CoachPlayer.coach_id == session.coach_id, CoachPlayer.player_id == child.id)
@@ -135,9 +144,15 @@ def create_booking(
     )
     is_active_client = coach_player is not None and coach_player.status == CoachPlayerStatus.active
 
-    if session.visibility.value == "closed" and not is_active_client:
+    access = child_access(db, session, child.id)
+    if access == "not_client":
         raise HTTPException(
             status_code=403, detail="Закрытая тренировка недоступна — ребёнок не в базе тренера"
+        )
+    if access == "not_in_group":
+        raise HTTPException(
+            status_code=403,
+            detail=f"Закрытая тренировка недоступна — «{child.name}» не входит в группу этой тренировки",
         )
 
     existing = (
@@ -234,6 +249,108 @@ def create_manual_booking(
     db.commit()
     db.refresh(booking)
     return _to_booking_out(db, booking)
+
+
+_ACTIVE_BOOKING_REASONS = {
+    BookingStatus.confirmed: "Уже записан",
+    BookingStatus.pending: "Уже подал заявку (ждёт вашего подтверждения)",
+    BookingStatus.waiting: "Уже в листе ожидания",
+    BookingStatus.invited: "Уже в листе ожидания (приглашён)",
+}
+
+
+@router.post("/sessions/{session_id}/participants", response_model=AddParticipantsOut)
+def add_participants(
+    session_id: int,
+    data: AddParticipantsIn,
+    user: User = Depends(require_role("coach")),
+    db: Session = Depends(get_db),
+):
+    """
+    Тренер записывает на свою тренировку учеников из базы: выбранных по одному и/или
+    целыми группами (все ученики выбранных групп). Записи сразу подтверждены.
+
+    Ответ не «всё или ничего»: кого удалось — в added, кого нет (уже записан, нет мест,
+    не принял приглашение) — в skipped с причиной. Родители добавленных получают уведомление.
+    """
+    session = db.get(TrainingSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Тренировка не найдена")
+    if session.coach_id != user.id:
+        raise HTTPException(status_code=403, detail="Доступно только владельцу тренировки")
+    if session.datetime_ < datetime.now(timezone.utc):
+        raise HTTPException(status_code=409, detail="Тренировка уже прошла")
+    if not data.coach_player_ids and not data.group_ids:
+        raise HTTPException(status_code=422, detail="Выберите учеников или группы")
+
+    group_ids = validated_group_ids(db, user.id, data.group_ids)
+
+    requested = set(data.coach_player_ids)
+    own = {
+        cp.id: cp
+        for cp in db.query(CoachPlayer)
+        .filter(CoachPlayer.coach_id == user.id, CoachPlayer.id.in_(requested or {0}))
+        .all()
+    }
+    if requested - set(own):
+        raise HTTPException(status_code=422, detail="Один из учеников не найден в вашей базе")
+
+    if group_ids:
+        for cp in (
+            db.query(CoachPlayer)
+            .join(ClientGroupMember, ClientGroupMember.coach_player_id == CoachPlayer.id)
+            .filter(CoachPlayer.coach_id == user.id, ClientGroupMember.group_id.in_(group_ids))
+            .all()
+        ):
+            own.setdefault(cp.id, cp)
+
+    # Порядок — по имени ребёнка, чтобы при нехватке мест результат был предсказуемым.
+    players = {p.id: p for p in db.query(Player).filter(Player.id.in_([cp.player_id for cp in own.values()] or [0])).all()}
+    ordered = sorted(own.values(), key=lambda cp: (players[cp.player_id].name.lower(), cp.id))
+
+    confirmed = _confirmed_count(db, session_id)
+    added, skipped, to_notify = [], [], []
+    for cp in ordered:
+        child = players[cp.player_id]
+        if cp.status != CoachPlayerStatus.active:
+            # removed из группы не показываем: тренер его убрал из базы; pending — реальная причина
+            if cp.status == CoachPlayerStatus.pending:
+                skipped.append(SkippedParticipantOut(player_name=child.name, reason="Родитель ещё не принял приглашение"))
+            continue
+
+        existing = (
+            db.query(Booking)
+            .filter(Booking.session_id == session_id, Booking.player_id == child.id)
+            .first()
+        )
+        if existing is not None and existing.status in _ACTIVE_BOOKING_REASONS:
+            skipped.append(SkippedParticipantOut(player_name=child.name, reason=_ACTIVE_BOOKING_REASONS[existing.status]))
+            continue
+        if confirmed >= session.max_players:
+            skipped.append(SkippedParticipantOut(player_name=child.name, reason="Нет свободных мест"))
+            continue
+
+        if existing is not None:  # отменённая/отклонённая/просроченная запись — переиспользуем строку
+            existing.status = BookingStatus.confirmed
+            existing.invited_at = None
+            existing.reminder_sent_at = None
+            booking = existing
+        else:
+            booking = Booking(session_id=session_id, player_id=child.id, status=BookingStatus.confirmed)
+            db.add(booking)
+        confirmed += 1
+        added.append(booking)
+        to_notify.append(child)
+
+    db.commit()
+    for booking in added:
+        db.refresh(booking)
+
+    title = _session_title(session)
+    for child in to_notify:
+        notify("booked_by_coach", db.get(User, child.parent_id), player_name=child.name, session_title=title)
+
+    return AddParticipantsOut(added=[_to_booking_out(db, b) for b in added], skipped=skipped)
 
 
 @router.post("/bookings/{booking_id}/cancel", response_model=BookingOut)

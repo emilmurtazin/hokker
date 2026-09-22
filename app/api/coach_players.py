@@ -8,6 +8,7 @@ from app.api.deps import require_role
 from app.core.database import get_db
 from app.models.attendance import Attendance
 from app.models.booking import Booking
+from app.models.client_group import ClientGroupMember
 from app.models.coach_player import CoachPlayer
 from app.models.enums import AttendanceStatus, BookingStatus, CoachPlayerStatus
 from app.models.player import Player
@@ -76,6 +77,13 @@ def _build_out(db: Session, cp: CoachPlayer) -> CoachPlayerOut:
         attendance=AttendanceSummary(**counts),
         sessions_count=sessions_count,
         created_at=cp.created_at,
+        group_ids=[
+            g
+            for (g,) in db.query(ClientGroupMember.group_id)
+            .filter(ClientGroupMember.coach_player_id == cp.id)
+            .order_by(ClientGroupMember.group_id)
+            .all()
+        ],
     )
 
 

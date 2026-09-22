@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router
 from app.api.coach_players import router as coach_players_router
+from app.api.client_groups import router as client_groups_router
 from app.api.coaches import router as coaches_router
 from app.api.children import router as children_router
 from app.api.sessions import router as sessions_router
@@ -72,6 +73,7 @@ app.include_router(users_router)
 # coaches_router есть параметризованный /coaches/{coach_id}, который иначе
 # перехватил бы эти запросы первым (см. аналогичный фикс в sessions.py).
 app.include_router(coach_players_router)
+app.include_router(client_groups_router)
 app.include_router(coaches_router)
 app.include_router(children_router)
 app.include_router(sessions_router)

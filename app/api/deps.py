@@ -7,6 +7,9 @@ from app.core.security import decode_token, JWTError
 from app.models.user import User
 
 bearer_scheme = HTTPBearer(auto_error=True)
+# Для публичных эндпоинтов, у которых есть «персональная» часть (лента тренировок):
+# без токена — обычный посетитель, с токеном — конкретный пользователь.
+optional_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
@@ -53,3 +56,17 @@ def require_role(*allowed_roles: str):
         return user
 
     return dependency
+
+
+def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """
+    Пользователь, если пришёл токен, иначе None. Просроченный/неверный токен — 401,
+    а не молчаливое «аноним»: фронтенд по 401 обновляет токен и повторяет запрос,
+    иначе родитель случайно потерял бы в ленте свои закрытые тренировки.
+    """
+    if credentials is None:
+        return None
+    return get_current_user(credentials, db)
