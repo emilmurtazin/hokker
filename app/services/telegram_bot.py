@@ -37,7 +37,7 @@ from app.services.telegram import (
 # --- Клавиатуры по ролям: [(подпись, путь в приложении), ...] по строкам ---
 MENU_ROWS: dict[str, list[list[tuple[str, str]]]] = {
     "parent": [
-        [("📅 Расписание", "/schedule"), ("🔎 Тренеры", "/")],
+        [("📅 Расписание", "/schedule"), ("🔎 Тренировки", "/")],
         [("🎬 Упражнения", "/exercises"), ("👤 Профиль", "/profile")],
     ],
     "coach": [
