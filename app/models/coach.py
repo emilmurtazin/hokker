@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Integer, Text, DateTime, Enum, ForeignKey, func
+from sqlalchemy import BigInteger, Integer, String, Text, DateTime, Enum, ForeignKey, func
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,6 +33,12 @@ class Coach(Base):
     visible_in_search: Mapped[bool] = mapped_column(
         default=True, server_default="true", nullable=False
     )
+    # Постоянный числовой код, которым тренер делится с родителями, чтобы те сами
+    # добавили себя в его базу клиентов (см. POST /coaches/join). Тренер может
+    # сгенерировать новый код — тогда старый сразу перестаёт действовать
+    # (см. POST /coaches/me/join-code/regenerate).
+    join_code: Mapped[str] = mapped_column(String(6), unique=True, nullable=False, index=True)
+    join_code_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="coach_profile")

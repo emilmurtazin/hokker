@@ -9,11 +9,13 @@ from app.core.database import get_db
 from app.models.attendance import Attendance
 from app.models.booking import Booking
 from app.models.client_group import ClientGroupMember
+from app.models.coach import Coach
 from app.models.coach_player import CoachPlayer
 from app.models.enums import AttendanceStatus, BookingStatus, CoachPlayerStatus
 from app.models.player import Player
 from app.models.training_session import TrainingSession
 from app.models.user import User
+from app.schemas.coach import CoachJoinIn, CoachJoinPreviewOut
 from app.schemas.coach_player import (
     AttendanceHistoryEntryOut,
     AttendanceSummary,
@@ -260,6 +262,81 @@ def message_parent(
         f"✉️ Сообщение от тренера {esc(user.name)}:\n\n{esc(data.text)}",
     )
     return None
+
+
+# --- Родитель добавляет себя сам, по коду тренера ---
+
+
+@router.get("/coaches/lookup-by-code", response_model=CoachJoinPreviewOut)
+def lookup_coach_by_code(
+    code: str = Query(..., pattern=r"^\d{6}$"),
+    user: User = Depends(require_role("parent")),
+    db: Session = Depends(get_db),
+):
+    """Показать тренера по коду до того, как родитель подтвердит добавление ребёнка."""
+    coach = db.query(Coach).filter(Coach.join_code == code).first()
+    if coach is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Код не найден. Проверьте цифры или уточните у тренера актуальный код.",
+        )
+    coach_user = db.get(User, coach.id)
+    return CoachJoinPreviewOut(
+        id=coach_user.id,
+        name=coach_user.name,
+        city=coach_user.city,
+        specializations=[s.value for s in coach.specializations],
+        experience_years=coach.experience_years,
+    )
+
+
+@router.post("/coaches/join", response_model=CoachPlayerOut)
+def join_coach_by_code(
+    data: CoachJoinIn,
+    user: User = Depends(require_role("parent")),
+    db: Session = Depends(get_db),
+):
+    """
+    Родитель добавляет ребёнка в базу тренера по коду — без участия тренера.
+    Сразу активная запись: код и так известен только тем, кому его лично дал
+    тренер, отдельное подтверждение с его стороны не нужно.
+
+    Если тренер уже приглашал этого ребёнка (pending) — код принимает то же
+    приглашение, а не создаёт вторую запись.
+    """
+    coach = db.query(Coach).filter(Coach.join_code == data.code).first()
+    if coach is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Код не найден. Проверьте цифры или уточните у тренера актуальный код.",
+        )
+
+    child = db.get(Player, data.child_id)
+    if child is None or child.parent_id != user.id:
+        raise HTTPException(status_code=403, detail="Можно добавить только своего ребёнка")
+
+    existing = (
+        db.query(CoachPlayer)
+        .filter(CoachPlayer.coach_id == coach.id, CoachPlayer.player_id == child.id)
+        .first()
+    )
+    if existing is not None and existing.status == CoachPlayerStatus.active:
+        raise HTTPException(status_code=409, detail="Ребёнок уже в базе этого тренера")
+
+    if existing is not None:
+        existing.status = CoachPlayerStatus.active
+        cp = existing
+    else:
+        cp = CoachPlayer(coach_id=coach.id, player_id=child.id, status=CoachPlayerStatus.active)
+        db.add(cp)
+
+    db.commit()
+    db.refresh(cp)
+
+    coach_user = db.get(User, coach.id)
+    notify("client_joined_by_code", coach_user, player_name=child.name)
+
+    return _build_out(db, cp)
 
 
 # --- Со стороны родителя: просмотр и подтверждение приглашений ---

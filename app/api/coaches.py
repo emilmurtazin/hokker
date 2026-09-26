@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_role
 from app.core.database import get_db
 from app.models.coach import Coach
+from app.services.join_code import generate_unique_join_code
 from app.models.enums import ExerciseAgeGroup, Specialization, UserRole
 from app.models.training_session import TrainingSession
 from app.models.enums import SessionVisibility
@@ -36,6 +37,13 @@ def _build_profile_out(coach: Coach, user: User) -> CoachProfileOut:
     )
 
 
+def _with_join_code(out: CoachProfileOut, coach: Coach) -> CoachProfileOut:
+    """Добавляет код к ответу — только для эндпоинтов, доступных исключительно самому тренеру."""
+    out.join_code = coach.join_code
+    out.join_code_changed_at = coach.join_code_changed_at
+    return out
+
+
 @router.post("/me/profile", response_model=CoachProfileOut)
 def upsert_my_profile(
     data: CoachProfileIn,
@@ -44,7 +52,7 @@ def upsert_my_profile(
 ):
     coach = db.get(Coach, user.id)
     if coach is None:
-        coach = Coach(id=user.id)
+        coach = Coach(id=user.id, join_code=generate_unique_join_code(db))
         db.add(coach)
 
     coach.specializations = [Specialization(s) for s in data.specializations]
@@ -55,7 +63,27 @@ def upsert_my_profile(
     db.commit()
     db.refresh(coach)
 
-    return _build_profile_out(coach, user)
+    return _with_join_code(_build_profile_out(coach, user), coach)
+
+
+@router.post("/me/join-code/regenerate", response_model=CoachProfileOut)
+def regenerate_join_code(
+    user: User = Depends(require_role("coach")),
+    db: Session = Depends(get_db),
+):
+    """
+    Новый код взамен старого — старый сразу перестаёт открывать доступ
+    (POST /coaches/join по нему больше не найдёт тренера). Пригодится, если
+    код случайно ушёл не тем людям.
+    """
+    coach = db.get(Coach, user.id)
+    if coach is None:
+        raise HTTPException(status_code=404, detail="Сначала заполните профиль тренера")
+    coach.join_code = generate_unique_join_code(db)
+    coach.join_code_changed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(coach)
+    return _with_join_code(_build_profile_out(coach, user), coach)
 
 
 @router.get("/me/profile", response_model=CoachProfileOut)
@@ -66,7 +94,7 @@ def get_my_profile(
     coach = db.get(Coach, user.id)
     if coach is None:
         raise HTTPException(status_code=404, detail="Профиль ещё не заполнен")
-    return _build_profile_out(coach, user)
+    return _with_join_code(_build_profile_out(coach, user), coach)
 
 
 @router.get("/{coach_id}", response_model=CoachProfileOut)

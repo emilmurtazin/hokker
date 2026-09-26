@@ -24,6 +24,12 @@ class CoachProfileOut(BaseModel):
     about: Optional[str] = None
     age_groups: List[str] = []
     visible_in_search: bool = True
+    # Виден только самому тренеру (родителям — никогда): им делятся лично,
+    # чтобы родитель мог добавить себя в клиенты через POST /coaches/join.
+    # None в ЛЮБОМ ответе, кроме собственных /coaches/me/profile и regenerate —
+    # публичный просмотр профиля (GET /coaches/{id}) их не заполняет.
+    join_code: Optional[str] = None
+    join_code_changed_at: Optional[datetime] = None
 
 
 class TrainingSessionShortOut(BaseModel):
@@ -47,3 +53,18 @@ class CoachCatalogOut(BaseModel):
     total: int
     limit: int
     offset: int
+
+class CoachJoinPreviewOut(BaseModel):
+    """То, что видит родитель после ввода кода — до выбора ребёнка и подтверждения."""
+
+    id: int
+    name: str
+    city: Optional[str] = None
+    specializations: List[str]
+    experience_years: Optional[int] = None
+
+
+class CoachJoinIn(BaseModel):
+    code: str = Field(..., pattern=r"^\d{6}$")
+    child_id: int
+
