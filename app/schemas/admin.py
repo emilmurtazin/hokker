@@ -1,7 +1,9 @@
 from datetime import date, datetime, time
 from typing import Generic, Optional, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.common import normalize_optional_text
 
 T = TypeVar("T")
 
@@ -60,10 +62,12 @@ class AdminUserListItem(BaseModel):
     phone: str
     city: Optional[str] = None
     is_blocked: bool
+    telegram_linked: bool = False  # вычисляется отдельно (u.telegram_chat_id), не поле ORM
     created_at: datetime
     # заполняется только для соответствующей роли
     children_count: Optional[int] = None
     active_students_count: Optional[int] = None
+    age_groups: Optional[list[str]] = None
     arena_name: Optional[str] = None
 
     model_config = {"from_attributes": True}
@@ -119,6 +123,8 @@ class AdminUserUpdateIn(BaseModel):
     is_blocked: Optional[bool] = None
     blocked_reason: Optional[str] = Field(default=None, max_length=500)
 
+    _normalize_city = field_validator("city", mode="before")(normalize_optional_text)
+
 
 class AdminCoachUpdateIn(BaseModel):
     visible_in_search: Optional[bool] = None
@@ -153,6 +159,8 @@ class AdminArenaUpdateIn(BaseModel):
     ice_size: Optional[str] = Field(default=None, max_length=100)
     locker_rooms: Optional[int] = None
     contact_phone: Optional[str] = Field(default=None, max_length=20)
+
+    _normalize_city = field_validator("city", mode="before")(normalize_optional_text)
 
 
 # --- Тренировки и записи ---

@@ -3,6 +3,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import normalize_optional_text
+
 PHONE_PATTERN = r"^\+?\d{10,15}$"
 
 
@@ -54,6 +56,8 @@ class UserUpdateIn(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     city: Optional[str] = Field(default=None, max_length=255)
 
+    _normalize_city = field_validator("city", mode="before")(normalize_optional_text)
+
 
 class TokenPairOut(BaseModel):
     status: Literal["logged_in"] = "logged_in"
@@ -72,6 +76,8 @@ class RegisterIn(BaseModel):
     role: Literal["coach", "parent", "arena_admin"]
     name: str = Field(..., min_length=1, max_length=255)
     city: Optional[str] = None
+
+    _normalize_city = field_validator("city", mode="before")(normalize_optional_text)
 
 
 class RefreshIn(BaseModel):

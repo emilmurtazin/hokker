@@ -159,6 +159,7 @@ def list_users(
     items: list[AdminUserListItem] = []
     for u in rows:
         item = AdminUserListItem.model_validate(u)
+        item.telegram_linked = bool(u.telegram_chat_id)
         if u.role == UserRole.parent:
             item.children_count = db.query(func.count(Player.id)).filter(Player.parent_id == u.id).scalar()
         elif u.role == UserRole.coach:
@@ -167,6 +168,8 @@ def list_users(
                 .filter(CoachPlayer.coach_id == u.id, CoachPlayer.status == CoachPlayerStatus.active)
                 .scalar()
             )
+            coach = db.get(Coach, u.id)
+            item.age_groups = [a.value for a in (coach.age_groups or [])] if coach else []
         elif u.role == UserRole.arena_admin:
             arena = db.get(Arena, u.id)
             item.arena_name = arena.name if arena else None

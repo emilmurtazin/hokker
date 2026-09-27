@@ -1,7 +1,9 @@
 from datetime import date, datetime, time
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.common import normalize_optional_text
 
 ICE_TYPE = Literal["full", "half", "third"]
 
@@ -13,6 +15,8 @@ class ArenaProfileIn(BaseModel):
     ice_size: Optional[str] = Field(default=None, max_length=100)
     locker_rooms: Optional[int] = Field(default=None, ge=0)
     contact_phone: Optional[str] = Field(default=None, max_length=20)
+
+    _normalize_city = field_validator("city", mode="before")(normalize_optional_text)
 
 
 class ArenaProfileOut(BaseModel):
