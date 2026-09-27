@@ -22,6 +22,7 @@ from app.api.ratings import router as ratings_router
 from app.api.arenas import router as arenas_router
 from app.api.exercises import router as exercises_router
 from app.api.telegram import router as telegram_router
+from app.api.admin import router as admin_router
 from app.services.scheduler import scheduler_loop
 from app.services.telegram import setup_bot_profile
 
@@ -83,6 +84,7 @@ app.include_router(ratings_router)
 app.include_router(arenas_router)
 app.include_router(exercises_router)
 app.include_router(telegram_router)
+app.include_router(admin_router)
 
 
 @app.get("/health")

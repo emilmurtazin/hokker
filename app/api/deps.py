@@ -37,6 +37,13 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Пользователь не найден",
         )
+    if user.is_blocked:
+        # Блокировка должна действовать немедленно, а не только при следующем
+        # входе — иначе уже выданный access-токен работал бы ещё до 30 минут.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Аккаунт заблокирован администратором",
+        )
     return user
 
 

@@ -130,6 +130,9 @@ def verify_code_endpoint(data: VerifyCodeIn, db: Session = Depends(get_db)):
             registration_token=create_registration_token(auth_code.phone)
         )
 
+    if user.is_blocked:
+        raise HTTPException(status_code=403, detail="Аккаунт заблокирован администратором")
+
     return _issue_token_pair(user, db)
 
 
